@@ -253,6 +253,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px;
 }
 
 .mobile-back-btn {
+  display: none;
   position: sticky;
   top: 0;
   z-index: 50;
@@ -268,6 +269,10 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px;
 
 .enter-draw-btn {
   display: none;
+}
+
+.sec-drawing-desktop {
+  display: block;
 }
 
 @media (max-width: 768px) {
@@ -342,7 +347,11 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px;
   #page-main.active .canvas-area {
     display: none;
   }
-  
+
+  #page-main.active .sec-drawing-desktop {
+    display: none;
+  }
+
   #page-main.active .enter-draw-btn {
     display: flex;
     width: 100%;
@@ -376,23 +385,21 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px;
   #page-draw.active .sidebar #sec-json {
     display: none;
   }
-  
-  #page-draw.active .canvas-area {
+
+  .canvas-area {
+    display: none;
+  }
+
+  #page-draw.active ~ .canvas-area {
     display: flex;
     width: 100%;
     flex: 1;
     height: auto;
     min-height: 300px;
-    order: 2;
   }
   
-  #page-draw.active .enter-draw-btn {
-    display: none;
-  }
-  
-  #page-draw.active .mobile-back-btn {
+  #page-draw.active ~ .mobile-back-btn {
     display: flex;
-    order: 3;
   }
   
   .sidebar {
@@ -455,8 +462,19 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px;
   <!-- Enter Draw Button (mobile only) -->
   <button class="btn btn-primary enter-draw-btn" onclick="switchToDrawPage()" style="margin:12px 14px; width: calc(100% - 28px);">▶ 进入绘制</button>
 
-  <!-- 2. 绘制控制 -->
-  
+  <!-- 2. 绘制控制 (desktop only) -->
+  <div class="section sec-drawing-desktop" id="sec-drawing-desktop">
+    <div class="sec-title">绘制控制</div>
+    <div id="statusBadge" class="status-badge status-idle">
+      <div class="status-dot"></div><span id="statusText">待机</span>
+    </div>
+    <div class="btn-row" style="margin-top:8px;">
+      <button class="btn btn-primary" id="drawBtn" onclick="startDrawing()">▶ 开始绘制</button>
+      <button class="btn btn-warning" id="pauseBtn" onclick="pauseDrawing()" disabled>⏸ 暂停</button>
+    </div>
+    <button class="btn btn-danger"  onclick="clearTrack()">✕ 清除轨迹</button>
+    <button class="btn btn-ghost"   onclick="undoLast()">↩ 撤销最后段</button>
+  </div>
 
   <!-- 4. 运动参数 -->
   <div class="section" id="sec-motion">
@@ -486,7 +504,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px;
 
 </div><!-- /page-main -->
 
-<!-- PAGE 2: Draw (drawing + canvas) -->
+<!-- PAGE 2: Draw sidebar (mobile only) -->
 <div class="mobile-page" id="page-draw">
 
 <div class="sidebar">
@@ -494,18 +512,25 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px;
   <!-- 2. 绘制控制 -->
   <div class="section" id="sec-drawing">
     <div class="sec-title">绘制控制</div>
-    <div id="statusBadge" class="status-badge status-idle">
-      <div class="status-dot"></div><span id="statusText">待机</span>
+    <div id="statusBadgeMobile" class="status-badge status-idle">
+      <div class="status-dot"></div><span id="statusTextMobile">待机</span>
     </div>
-    <button class="btn btn-primary" id="drawBtn" onclick="toggleDrawing()" style="margin-top:8px; width:100%;">▶ 开始绘制</button>
+    <button class="btn btn-primary" id="drawBtnMobile" onclick="toggleDrawing()" style="margin-top:8px; width:100%;">▶ 开始绘制</button>
     <p style="font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.5;margin-bottom:0;">画的越快，跑的越快，但再快也快不过时间设定的上限</p>
-    <button class="btn btn-danger"  onclick="clearTrack()">✕ 清除轨迹</button>
-    <button class="btn btn-ghost"   onclick="undoLast()">↩ 撤销最后段</button>
+    <button class="btn btn-danger" onclick="clearTrack()">✕ 清除轨迹</button>
+    <button class="btn btn-ghost" onclick="undoLast()">↩ 撤销最后段</button>
   </div>
 
 </div><!-- /sidebar -->
 
-<!-- CANVAS -->
+</div><!-- /page-draw -->
+
+<!-- Mobile Back Button -->
+<div class="mobile-back-btn">
+  <button class="btn btn-ghost" onclick="switchToMainPage()">← 返回</button>
+</div>
+
+<!-- CANVAS (shared desktop & mobile) -->
 <div class="canvas-area">
   <div class="canvas-toolbar">
     <span class="tool-label">色</span>
@@ -538,13 +563,6 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px;
 
   <div class="coord-display" id="coordDisplay">x:— y:— | lat:— lng:—</div>
 </div>
-
-<!-- Mobile Back Button -->
-<div class="mobile-back-btn" style="display:none;">
-  <button class="btn btn-ghost" onclick="switchToMainPage()">← 返回</button>
-</div>
-
-</div><!-- /page-draw -->
 
 </div><!-- /main-layout -->
 
@@ -616,17 +634,11 @@ function loadFromStorage() {
 function switchToDrawPage() {
   document.getElementById('page-main').classList.remove('active');
   document.getElementById('page-draw').classList.add('active');
-  // Show mobile-specific elements
-  document.querySelectorAll('#page-draw .mobile-back-btn').forEach(el => el.style.display = 'flex');
-  document.querySelectorAll('#page-main .enter-draw-btn').forEach(el => el.style.display = 'none');
 }
 
 function switchToMainPage() {
   document.getElementById('page-draw').classList.remove('active');
   document.getElementById('page-main').classList.add('active');
-  // Hide mobile-specific elements
-  document.querySelectorAll('#page-draw .mobile-back-btn').forEach(el => el.style.display = 'none');
-  document.querySelectorAll('#page-main .enter-draw-btn').forEach(el => el.style.display = 'flex');
 }
 
 // Show enter button only on mobile
@@ -743,38 +755,57 @@ function showCanvas(img) {
 }
 
 // ══ DRAWING CONTROLS ════════════════════════════════════
+// Desktop: separate start/pause buttons
+function startDrawing() {
+  if (!state.images[state.currentIdx].img) { alert('请先上传地图图片'); return; }
+  state.isDrawing=true; state.isPaused=false; state.lastPos=null; state.currentSegment=[];
+  document.getElementById('drawBtn').disabled=true;
+  document.getElementById('pauseBtn').disabled=false;
+  setStatus('drawing','绘制中');
+}
+
+function pauseDrawing() {
+  if (!state.isDrawing||state.isPaused) return;
+  if (state.currentSegment.length>0) {
+    state.images[state.currentIdx].trackSegments.push([...state.currentSegment]);
+    state.currentSegment=[];
+  }
+  state.isPaused=true; state.lastPos=null;
+  setStatus('paused','已暂停');
+  document.getElementById('pauseBtn').textContent='▶ 继续';
+  document.getElementById('drawBtn').disabled=false;
+  document.getElementById('drawBtn').textContent='▶ 继续绘制';
+  document.getElementById('drawBtn').onclick=resumeDrawing;
+}
+
+function resumeDrawing() {
+  state.isPaused=false; state.currentSegment=[]; state.lastPos=null;
+  document.getElementById('drawBtn').disabled=true;
+  document.getElementById('pauseBtn').disabled=false;
+  document.getElementById('pauseBtn').textContent='⏸ 暂停';
+  setStatus('drawing','绘制中');
+}
+
+// Mobile: single toggle button
 function toggleDrawing() {
-  const btn = document.getElementById('drawBtn');
-  
+  const btn = document.getElementById('drawBtnMobile');
   if (!state.isDrawing) {
-    // START
     if (!state.images[state.currentIdx].img) { alert('请先上传地图图片'); return; }
-    state.isDrawing = true;
-    state.isPaused = false;
-    state.lastPos = null;
-    state.currentSegment = [];
-    btn.textContent = '⏸ 暂停绘制';
-    btn.className = 'btn btn-warning';
-    setStatus('drawing', '绘制中');
+    state.isDrawing=true; state.isPaused=false; state.lastPos=null; state.currentSegment=[];
+    btn.textContent='⏸ 暂停绘制'; btn.className='btn btn-warning';
+    setStatus('drawing','绘制中');
   } else if (!state.isPaused) {
-    // PAUSE
-    if (state.currentSegment.length > 0) {
+    if (state.currentSegment.length>0) {
       state.images[state.currentIdx].trackSegments.push([...state.currentSegment]);
-      state.currentSegment = [];
+      state.currentSegment=[];
     }
-    state.isPaused = true;
-    state.lastPos = null;
-    btn.textContent = '▶ 继续绘制';
-    btn.className = 'btn btn-primary';
-    setStatus('paused', '已暂停');
+    state.isPaused=true; state.lastPos=null;
+    btn.textContent='▶ 继续绘制'; btn.className='btn btn-primary';
+    setStatus('paused','已暂停');
   } else {
-    // RESUME
-    state.isPaused = false;
-    state.currentSegment = [];
-    state.lastPos = null;
-    btn.textContent = '⏸ 暂停绘制';
-    btn.className = 'btn btn-warning';
-    setStatus('drawing', '绘制中');
+    state.isPaused=false; state.currentSegment=[]; state.lastPos=null;
+    btn.textContent='⏸ 暂停绘制'; btn.className='btn btn-warning';
+    setStatus('drawing','绘制中');
   }
 }
 
@@ -792,10 +823,10 @@ function clearTrack() {
   const cur = state.images[state.currentIdx];
   cur.trackSegments=[]; state.currentSegment=[]; state.lastPos=null;
   state.isDrawing=false; state.isPaused=false;
-  const btn = document.getElementById('drawBtn');
-  btn.disabled=false;
-  btn.textContent='▶ 开始绘制';
-  btn.className='btn btn-primary';
+  const drawBtn = document.getElementById('drawBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  if (drawBtn) { drawBtn.disabled=false; drawBtn.textContent='▶ 开始绘制'; drawBtn.className='btn btn-primary'; drawBtn.onclick=startDrawing; }
+  if (pauseBtn) { pauseBtn.disabled=true; pauseBtn.textContent='⏸ 暂停'; }
   setStatus('idle','待机');
   redrawAll(); updateStats(); updatePointInfo();
   document.getElementById('jsonOutput').textContent='// 点击"生成 GPS JSON"';
@@ -1146,8 +1177,14 @@ function toggleSection(titleId, bodyId) {
 
 // ══ UI HELPERS ════════════════════════════════════════════
 function setStatus(type, text) {
-  document.getElementById('statusBadge').className='status-badge status-'+type;
-  document.getElementById('statusText').textContent=text;
+  const badge = document.getElementById('statusBadge');
+  const textEl = document.getElementById('statusText');
+  if (badge) badge.className='status-badge status-'+type;
+  if (textEl) textEl.textContent=text;
+  const badgeM = document.getElementById('statusBadgeMobile');
+  const textM = document.getElementById('statusTextMobile');
+  if (badgeM) badgeM.className='status-badge status-'+type;
+  if (textM) textM.textContent=text;
 }
 function setColor(c, el) {
   state.drawColor=c;

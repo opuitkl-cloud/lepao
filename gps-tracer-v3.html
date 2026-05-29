@@ -266,6 +266,10 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px;
   width: 100%;
 }
 
+.enter-draw-btn {
+  display: none;
+}
+
 @media (max-width: 768px) {
   header { padding: 10px 14px; }
   .stat-label { font-size: 8px; }
@@ -449,7 +453,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px;
   </div>
 
   <!-- Enter Draw Button (mobile only) -->
-  <button class="btn btn-primary enter-draw-btn" onclick="switchToDrawPage()" style="display:none; margin:12px 14px; width: calc(100% - 28px);">▶ 进入绘制</button>
+  <button class="btn btn-primary enter-draw-btn" onclick="switchToDrawPage()" style="margin:12px 14px; width: calc(100% - 28px);">▶ 进入绘制</button>
 
   <!-- 2. 绘制控制 -->
   
@@ -788,11 +792,10 @@ function clearTrack() {
   const cur = state.images[state.currentIdx];
   cur.trackSegments=[]; state.currentSegment=[]; state.lastPos=null;
   state.isDrawing=false; state.isPaused=false;
-  document.getElementById('drawBtn').disabled=false;
-  document.getElementById('drawBtn').textContent='▶ 开始绘制';
-  document.getElementById('drawBtn').onclick=startDrawing;
-  document.getElementById('pauseBtn').disabled=true;
-  document.getElementById('pauseBtn').textContent='⏸ 暂停';
+  const btn = document.getElementById('drawBtn');
+  btn.disabled=false;
+  btn.textContent='▶ 开始绘制';
+  btn.className='btn btn-primary';
   setStatus('idle','待机');
   redrawAll(); updateStats(); updatePointInfo();
   document.getElementById('jsonOutput').textContent='// 点击"生成 GPS JSON"';

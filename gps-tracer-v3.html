@@ -46,12 +46,19 @@ header {
   width: 272px; min-width: 272px;
   background: var(--surface); border-right: 1px solid var(--border);
   display: flex; flex-direction: column; overflow-y: auto;
+  min-height: 0;
 }
 
-.canvas-area { 
+.canvas-area {
   grid-column: 2;
   grid-row: 1;
-  display: flex; flex-direction: column; overflow: hidden; position: relative; 
+  display: flex; flex-direction: column; overflow: hidden; position: relative;
+}
+
+#page-main {
+  grid-column: 1;
+  grid-row: 1;
+  overflow: hidden;
 }
 
 .bottom-section {
@@ -61,10 +68,10 @@ header {
 /* ── SECTIONS (ordered on both mobile and desktop) ── */
 .sidebar { flex-direction: column; }
 #sec-layer    { order: 1; }
+#sec-drawing-desktop { order: 2; }
 #sec-drawing  { order: 2; }
-#sec-image    { order: 3; }
-#sec-motion   { order: 4; }
-#sec-json     { order: 5; }
+#sec-motion   { order: 3; }
+#sec-json     { order: 4; }
 
 .section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
 
@@ -462,18 +469,16 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px;
   <!-- Enter Draw Button (mobile only) -->
   <button class="btn btn-primary enter-draw-btn" onclick="switchToDrawPage()" style="margin:12px 14px; width: calc(100% - 28px);">▶ 进入绘制</button>
 
-  <!-- 2. 绘制控制 (desktop only) -->
+  <!-- 2. 绘制控制 (desktop) -->
   <div class="section sec-drawing-desktop" id="sec-drawing-desktop">
     <div class="sec-title">绘制控制</div>
     <div id="statusBadge" class="status-badge status-idle">
       <div class="status-dot"></div><span id="statusText">待机</span>
     </div>
-    <div class="btn-row" style="margin-top:8px;">
-      <button class="btn btn-primary" id="drawBtn" onclick="startDrawing()">▶ 开始绘制</button>
-      <button class="btn btn-warning" id="pauseBtn" onclick="pauseDrawing()" disabled>⏸ 暂停</button>
-    </div>
-    <button class="btn btn-danger"  onclick="clearTrack()">✕ 清除轨迹</button>
-    <button class="btn btn-ghost"   onclick="undoLast()">↩ 撤销最后段</button>
+    <button class="btn btn-primary" id="drawBtn" onclick="toggleDrawing()" style="margin-top:8px; width:100%;">▶ 开始绘制</button>
+    <p style="font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.5;margin-bottom:0;">画的越快，跑的越快，但再快也快不过时间设定的上限</p>
+    <button class="btn btn-danger" onclick="clearTrack()">✕ 清除轨迹</button>
+    <button class="btn btn-ghost" onclick="undoLast()">↩ 撤销最后段</button>
   </div>
 
   <!-- 4. 运动参数 -->
@@ -755,40 +760,8 @@ function showCanvas(img) {
 }
 
 // ══ DRAWING CONTROLS ════════════════════════════════════
-// Desktop: separate start/pause buttons
-function startDrawing() {
-  if (!state.images[state.currentIdx].img) { alert('请先上传地图图片'); return; }
-  state.isDrawing=true; state.isPaused=false; state.lastPos=null; state.currentSegment=[];
-  document.getElementById('drawBtn').disabled=true;
-  document.getElementById('pauseBtn').disabled=false;
-  setStatus('drawing','绘制中');
-}
-
-function pauseDrawing() {
-  if (!state.isDrawing||state.isPaused) return;
-  if (state.currentSegment.length>0) {
-    state.images[state.currentIdx].trackSegments.push([...state.currentSegment]);
-    state.currentSegment=[];
-  }
-  state.isPaused=true; state.lastPos=null;
-  setStatus('paused','已暂停');
-  document.getElementById('pauseBtn').textContent='▶ 继续';
-  document.getElementById('drawBtn').disabled=false;
-  document.getElementById('drawBtn').textContent='▶ 继续绘制';
-  document.getElementById('drawBtn').onclick=resumeDrawing;
-}
-
-function resumeDrawing() {
-  state.isPaused=false; state.currentSegment=[]; state.lastPos=null;
-  document.getElementById('drawBtn').disabled=true;
-  document.getElementById('pauseBtn').disabled=false;
-  document.getElementById('pauseBtn').textContent='⏸ 暂停';
-  setStatus('drawing','绘制中');
-}
-
-// Mobile: single toggle button
 function toggleDrawing() {
-  const btn = document.getElementById('drawBtnMobile');
+  const btn = document.getElementById('drawBtn') || document.getElementById('drawBtnMobile');
   if (!state.isDrawing) {
     if (!state.images[state.currentIdx].img) { alert('请先上传地图图片'); return; }
     state.isDrawing=true; state.isPaused=false; state.lastPos=null; state.currentSegment=[];
@@ -823,10 +796,8 @@ function clearTrack() {
   const cur = state.images[state.currentIdx];
   cur.trackSegments=[]; state.currentSegment=[]; state.lastPos=null;
   state.isDrawing=false; state.isPaused=false;
-  const drawBtn = document.getElementById('drawBtn');
-  const pauseBtn = document.getElementById('pauseBtn');
-  if (drawBtn) { drawBtn.disabled=false; drawBtn.textContent='▶ 开始绘制'; drawBtn.className='btn btn-primary'; drawBtn.onclick=startDrawing; }
-  if (pauseBtn) { pauseBtn.disabled=true; pauseBtn.textContent='⏸ 暂停'; }
+  const btn = document.getElementById('drawBtn') || document.getElementById('drawBtnMobile');
+  if (btn) { btn.textContent='▶ 开始绘制'; btn.className='btn btn-primary'; }
   setStatus('idle','待机');
   redrawAll(); updateStats(); updatePointInfo();
   document.getElementById('jsonOutput').textContent='// 点击"生成 GPS JSON"';

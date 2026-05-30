@@ -1,0 +1,114 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]: GPS/TRACER
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]: 总距离
+        - generic [ref=e7]: 362.5 m
+      - generic [ref=e8]:
+        - generic [ref=e9]: 记录点
+        - generic [ref=e10]: "5"
+      - generic [ref=e11]:
+        - generic [ref=e12]: 平均配速
+        - generic [ref=e13]: 36:47
+  - generic [ref=e16]:
+    - generic [ref=e17]:
+      - generic [ref=e18] [cursor=pointer]:
+        - text: 图层管理
+        - generic [ref=e19]: ▾
+      - generic [ref=e20]:
+        - generic [ref=e64] [cursor=pointer]: 图层 1
+        - button "＋ 添加图层" [ref=e21] [cursor=pointer]
+        - generic [ref=e22]:
+          - generic [ref=e23]: 打卡点
+          - generic [ref=e65]:
+            - generic [ref=e66]:
+              - generic [ref=e67]:
+                - generic [ref=e68]: CP14
+                - generic "点击激活/取消" [ref=e69] [cursor=pointer]
+                - textbox "打卡点名称" [ref=e70]: 体育场北
+                - button "✕" [ref=e71] [cursor=pointer]
+              - generic [ref=e72]:
+                - spinbutton [ref=e73]: "30.509007"
+                - spinbutton [ref=e74]: "114.329637"
+                - spinbutton [ref=e75]: "20"
+            - generic [ref=e76]:
+              - generic [ref=e77]:
+                - generic [ref=e78]: CP15
+                - generic "点击激活/取消" [ref=e79] [cursor=pointer]
+                - textbox "打卡点名称" [ref=e80]: 体育场南
+                - button "✕" [ref=e81] [cursor=pointer]
+              - generic [ref=e82]:
+                - spinbutton [ref=e83]: "30.507606"
+                - spinbutton [ref=e84]: "114.329621"
+                - spinbutton [ref=e85]: "20"
+            - generic [ref=e86]:
+              - generic [ref=e87]:
+                - generic [ref=e88]: CP16
+                - generic "点击激活/取消" [ref=e89] [cursor=pointer]
+                - textbox "打卡点名称" [ref=e90]: 学生公寓南二栋
+                - button "✕" [ref=e91] [cursor=pointer]
+              - generic [ref=e92]:
+                - spinbutton [ref=e93]: "30.508397"
+                - spinbutton [ref=e94]: "114.328302"
+                - spinbutton [ref=e95]: "20"
+            - generic [ref=e96]:
+              - generic [ref=e97]:
+                - generic [ref=e98]: CP17
+                - generic "点击激活/取消" [ref=e99] [cursor=pointer]
+                - textbox "打卡点名称" [ref=e100]: 南六宿舍楼
+                - button "✕" [ref=e101] [cursor=pointer]
+              - generic [ref=e102]:
+                - spinbutton [ref=e103]: "30.506941"
+                - spinbutton [ref=e104]: "114.327894"
+                - spinbutton [ref=e105]: "20"
+            - generic [ref=e106]:
+              - generic [ref=e107]:
+                - generic [ref=e108]: CP18
+                - generic "点击激活/取消" [ref=e109] [cursor=pointer]
+                - textbox "打卡点名称" [ref=e110]: 体育馆东门
+                - button "✕" [ref=e111] [cursor=pointer]
+              - generic [ref=e112]:
+                - spinbutton [ref=e113]: "30.505217"
+                - spinbutton [ref=e114]: "114.331129"
+                - spinbutton [ref=e115]: "20"
+          - generic [ref=e24]:
+            - button "＋ 添加打卡点" [ref=e25] [cursor=pointer]
+            - button "批量导入" [ref=e26] [cursor=pointer]
+        - generic [ref=e27]: 地图图片 & 坐标
+        - generic [ref=e28]: 地图图片
+        - button "Choose File" [ref=e29] [cursor=pointer]
+        - generic [ref=e30]: 图片路径（data/ 下）
+        - textbox "data/map1.png" [ref=e31]: data/nanhu.png
+        - generic [ref=e32]: 右上角坐标（NE）
+        - generic [ref=e33]:
+          - generic [ref=e34]:
+            - generic [ref=e35]: 纬度 Lat
+            - spinbutton [ref=e36]: "30.514031"
+          - generic [ref=e37]:
+            - generic [ref=e38]: 经度 Lng
+            - spinbutton [ref=e39]: "114.339084"
+        - generic [ref=e40]: 左下角坐标（SW）
+        - generic [ref=e41]:
+          - generic [ref=e42]:
+            - generic [ref=e43]: 纬度 Lat
+            - spinbutton [ref=e44]: "30.501889"
+          - generic [ref=e45]:
+            - generic [ref=e46]: 经度 Lng
+            - spinbutton [ref=e47]: "114.326239"
+    - button "▶ 进入绘制" [ref=e48] [cursor=pointer]
+    - generic [ref=e49]:
+      - generic [ref=e50]: 运动参数
+      - generic [ref=e51]: 运动总时间（秒）
+      - spinbutton [ref=e52]: "800"
+      - generic [ref=e53]: 采样间隔（每N个原始点）
+      - spinbutton [ref=e54]: "5"
+      - generic [ref=e55]: 原始点：22 记录点：5
+      - button "⚡ 生成 GPS JSON" [ref=e56] [cursor=pointer]
+    - generic [ref=e57]:
+      - generic [ref=e58]: JSON 输出
+      - generic [ref=e59]: 尚未计算打卡
+      - generic [ref=e60]: // 点击"生成 GPS JSON"
+      - button "⎘ 复制 JSON" [ref=e61] [cursor=pointer]
+      - button "↓ 下载 JSON" [ref=e62] [cursor=pointer]
+  - generic: 已复制到剪贴板

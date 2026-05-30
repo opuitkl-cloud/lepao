@@ -1,0 +1,62 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]: GPS/TRACER
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]: 总距离
+        - generic [ref=e7]: 0 m
+      - generic [ref=e8]:
+        - generic [ref=e9]: 记录点
+        - generic [ref=e10]: "0"
+      - generic [ref=e11]:
+        - generic [ref=e12]: 平均配速
+        - generic [ref=e13]: 0:00
+  - generic [ref=e16]:
+    - generic [ref=e17]:
+      - generic [ref=e18] [cursor=pointer]:
+        - text: 图层管理
+        - generic [ref=e19]: ▾
+      - generic [ref=e20]:
+        - button "＋ 添加图层" [ref=e21] [cursor=pointer]
+        - generic [ref=e22]:
+          - generic [ref=e23]: 打卡点
+          - generic [ref=e24]:
+            - button "＋ 添加打卡点" [ref=e25] [cursor=pointer]
+            - button "批量导入" [ref=e26] [cursor=pointer]
+        - generic [ref=e27]: 地图图片 & 坐标
+        - generic [ref=e28]: 地图图片
+        - button "Choose File" [ref=e29] [cursor=pointer]
+        - generic [ref=e30]: 图片路径（data/ 下）
+        - textbox "data/map1.png" [ref=e31]
+        - generic [ref=e32]: 右上角坐标（NE）
+        - generic [ref=e33]:
+          - generic [ref=e34]:
+            - generic [ref=e35]: 纬度 Lat
+            - spinbutton [ref=e36]
+          - generic [ref=e37]:
+            - generic [ref=e38]: 经度 Lng
+            - spinbutton [ref=e39]
+        - generic [ref=e40]: 左下角坐标（SW）
+        - generic [ref=e41]:
+          - generic [ref=e42]:
+            - generic [ref=e43]: 纬度 Lat
+            - spinbutton [ref=e44]
+          - generic [ref=e45]:
+            - generic [ref=e46]: 经度 Lng
+            - spinbutton [ref=e47]
+    - button "▶ 进入绘制" [ref=e48] [cursor=pointer]
+    - generic [ref=e49]:
+      - generic [ref=e50]: 运动参数
+      - generic [ref=e51]: 运动总时间（秒）
+      - spinbutton [ref=e52]: "3600"
+      - generic [ref=e53]: 采样间隔（每N个原始点）
+      - spinbutton [ref=e54]: "20"
+      - generic [ref=e55]: 原始点：0 记录点：0
+      - button "⚡ 生成 GPS JSON" [ref=e56] [cursor=pointer]
+    - generic [ref=e57]:
+      - generic [ref=e58]: JSON 输出
+      - generic [ref=e59]: 尚未计算打卡
+      - generic [ref=e60]: // 点击"生成 GPS JSON"
+      - button "⎘ 复制 JSON" [ref=e61] [cursor=pointer]
+      - button "↓ 下载 JSON" [ref=e62] [cursor=pointer]
+  - generic: 已复制到剪贴板

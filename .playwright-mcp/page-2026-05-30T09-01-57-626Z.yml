@@ -1,0 +1,75 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]: GPS/TRACER
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]: 总距离
+        - generic [ref=e7]: 0 m
+      - generic [ref=e8]:
+        - generic [ref=e9]: 记录点
+        - generic [ref=e10]: "0"
+      - generic [ref=e11]:
+        - generic [ref=e12]: 平均配速
+        - generic [ref=e13]: 0:00
+  - generic [ref=e14]:
+    - generic [ref=e16]:
+      - generic [ref=e17]:
+        - generic [ref=e18]: 图层管理 ▾
+        - generic [ref=e19]:
+          - button "＋ 添加图层" [ref=e20]
+          - generic [ref=e21]:
+            - generic [ref=e22]: 打卡点
+            - generic [ref=e23]:
+              - button "＋ 添加打卡点" [ref=e24]
+              - button "批量导入" [ref=e25]
+          - generic [ref=e26]: 地图图片 & 坐标
+          - text: 地图图片
+          - button "Choose File" [ref=e27]
+          - text: 图片路径（data/ 下）
+          - textbox "data/map1.png" [ref=e28]
+          - generic [ref=e29]: 右上角坐标（NE）
+          - generic [ref=e30]:
+            - generic [ref=e31]:
+              - text: 纬度 Lat
+              - spinbutton [ref=e32]
+            - generic [ref=e33]:
+              - text: 经度 Lng
+              - spinbutton [ref=e34]
+          - generic [ref=e35]: 左下角坐标（SW）
+          - generic [ref=e36]:
+            - generic [ref=e37]:
+              - text: 纬度 Lat
+              - spinbutton [ref=e38]
+            - generic [ref=e39]:
+              - text: 经度 Lng
+              - spinbutton [ref=e40]
+      - button "▶ 进入绘制" [ref=e41]
+      - generic [ref=e42]:
+        - generic [ref=e43]: 绘制控制
+        - paragraph [ref=e44]: 画的越快，跑的越快，但再快也快不过时间设定的上限
+        - button "▶ 开始绘制" [ref=e45]
+        - button "✕ 清除轨迹" [ref=e46]
+      - generic [ref=e47]:
+        - generic [ref=e48]: 运动参数
+        - text: 运动总时间（秒）
+        - spinbutton [ref=e49]: "3600"
+        - text: 采样间隔（每N个原始点）
+        - spinbutton [ref=e50]: "20"
+        - generic [ref=e51]: 原始点：0 记录点：0
+        - button "⚡ 生成 GPS JSON" [ref=e52]
+      - generic [ref=e53]:
+        - generic [ref=e54]: JSON 输出
+        - generic [ref=e55]: 尚未计算打卡
+        - generic [ref=e56]: // 点击"生成 GPS JSON"
+        - button "⎘ 复制 JSON" [ref=e57]
+        - button "↓ 下载 JSON" [ref=e58]
+    - generic [ref=e61]:
+      - generic [ref=e62]: 绘制控制
+      - paragraph [ref=e63]: 画的越快，跑的越快，但再快也快不过时间设定的上限
+      - button "▶ 开始绘制" [ref=e64]
+      - button "✕ 清除轨迹" [ref=e65]
+    - button "◂ 返回主页面" [ref=e67]
+    - generic [ref=e68]:
+      - generic [ref=e71]: 上传地图图片开始绘制
+      - generic [ref=e72]: x:— y:— | lat:— lng:—
+  - generic [ref=e73]: 已复制到剪贴板

@@ -1,0 +1,22 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]: GPS/TRACER
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]: 总距离
+        - generic [ref=e7]: 0.0 m
+      - generic [ref=e8]:
+        - generic [ref=e9]: 记录点
+        - generic [ref=e10]: "0"
+      - generic [ref=e11]:
+        - generic [ref=e12]: 均速
+        - generic [ref=e13]: 0.00 m/s
+  - generic [ref=e14]:
+    - generic [ref=e63]:
+      - generic [ref=e64]: 绘制控制
+      - paragraph [ref=e65]: 画的越快，跑的越快，但再快也快不过时间设定的上限
+      - button "▶ 开始绘制" [ref=e66] [cursor=pointer]
+      - button "✕ 清除轨迹" [ref=e67] [cursor=pointer]
+    - generic [ref=e68]:
+      - generic: x:— y:— | lat:— lng:—
+  - generic: 已复制到剪贴板

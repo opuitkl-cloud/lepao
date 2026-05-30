@@ -11,9 +11,8 @@ let bgCtx, drawCtx, bgCanvas, drawCanvas;
 // ══ STORAGE ══════════════════════════════════════════════
 function saveToStorage() {
   const data = state.images.map(l => {
-    const isPath = l.imgSrc && !l.imgSrc.startsWith('data:');
     return {
-      imgPath: isPath ? l.imgSrc : null,
+      imgSrc: l.imgSrc || null,  // 保存完整数据（path 或 base64）
       neLat: l.neLat, neLng: l.neLng, swLat: l.swLat, swLng: l.swLng,
       checkinPoints: l.checkinPoints || [],
     };
@@ -41,7 +40,7 @@ function loadFromStorage() {
       }
       state.images = [];
       const promises = raw.layers.map((l, i) => new Promise(res => {
-        const imgSrc = l.imgPath || null;
+        const imgSrc = l.imgSrc || l.imgPath || null;
         state.images.push({
           img: null, imgSrc: imgSrc,
           neLat: l.neLat||'', neLng: l.neLng||'', swLat: l.swLat||'', swLng: l.swLng||'',
@@ -52,7 +51,7 @@ function loadFromStorage() {
           const img = new Image();
           img.crossOrigin = 'anonymous';
           img.onload = () => { state.images[i].img = img; res(); };
-          img.onerror = () => { res(); };
+          img.onerror = () => { console.warn('Image load failed:', imgSrc); res(); };
           img.src = imgSrc;
         } else res();
       }));
@@ -112,6 +111,19 @@ window.onload = () => {
   // Init collapse (open by default)
   const body = document.getElementById('layerBody');
   body.style.maxHeight = 'none';
+
+  // Sync mobile motion inputs → desktop
+  const syncInput = (fromId, toId) => {
+    const from = document.getElementById(fromId);
+    const to = document.getElementById(toId);
+    if (from && to) from.addEventListener('input', () => { to.value = from.value; if (toId==='totalTime') updateStats(); });
+  };
+  syncInput('totalTimeMobile', 'totalTime');
+  syncInput('sampleIntervalMobile', 'sampleInterval');
+  syncInput('totalTime', 'totalTimeMobile');
+  syncInput('sampleInterval', 'sampleIntervalMobile');
+
+  whutInit();
 };
 
 // ══ TABS ══════════════════════════════════════════════════
@@ -192,13 +204,14 @@ function loadImage(evt) {
   const file = evt.target.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
+    const dataUrl = e.target.result;
     const img = new Image();
     img.onload = () => {
       state.images[state.currentIdx].img    = img;
-      state.images[state.currentIdx].imgSrc = e.target.result;
+      state.images[state.currentIdx].imgSrc = dataUrl;
       showCanvas(img); redrawAll(); saveToStorage();
     };
-    img.src = e.target.result;
+    img.src = dataUrl;
   };
   reader.readAsDataURL(file);
 }
@@ -695,4 +708,311 @@ function downloadJSON() {
   const u=URL.createObjectURL(b), a=document.createElement('a');
   a.href=u; a.download=`gps_track_layer${state.currentIdx+1}_${Date.now()}.json`;
   a.click(); URL.revokeObjectURL(u);
+}
+
+// ════════════════════════════════════════════════════════════
+// WHUT 登录 / 提交
+// ════════════════════════════════════════════════════════════
+
+let whutAuth = null;
+let whutRunMode = 'free';
+let whutJobId = null;
+let whutPollTimer = null;
+
+const WHUT_CP = {
+  '14': { lat: 30.509007, lng: 114.329637, name: '体育场北' },
+  '15': { lat: 30.507606, lng: 114.329621, name: '体育场南' },
+  '16': { lat: 30.508397, lng: 114.328302, name: '学生公寓南二栋' },
+  '17': { lat: 30.506941, lng: 114.327894, name: '南六宿舍楼' },
+  '18': { lat: 30.505217, lng: 114.331129, name: '体育馆东门' },
+};
+
+// 页面初始化：检查已保存的认证
+function whutInit() {
+  try {
+    const saved = localStorage.getItem('whutAuth');
+    if (saved) {
+      whutAuth = JSON.parse(saved);
+      // 验证有效
+      if (!whutAuth || !whutAuth.uid) whutAuth = null;
+    }
+  } catch { whutAuth = null; }
+  whutUpdateUI();
+}
+
+// 切换登录/应用视图 — 用 style.display 直接控制
+function whutUpdateUI() {
+  const loginView = document.getElementById('loginView');
+  const mainLayout = document.getElementById('mainLayout');
+  const headerLogin = document.getElementById('headerLogin');
+  const headerMain = document.getElementById('headerMain');
+  const secLogin = document.getElementById('sec-whut-login');
+  const authName = document.getElementById('authName');
+
+  if (whutAuth) {
+    // 已登录 → 显示应用
+    loginView.style.display = 'none';
+    mainLayout.style.display = '';
+    headerLogin.style.display = 'none';
+    headerMain.style.display = '';
+    if (secLogin) secLogin.style.display = '';
+    if (authName) authName.textContent = whutAuth.name || whutAuth.student_num || '已登录';
+    // 恢复窗口尺寸
+    setTimeout(() => { window.dispatchEvent(new Event('resize')); }, 100);
+  } else {
+    // 未登录 → 显示登录页
+    loginView.style.display = '';
+    mainLayout.style.display = 'none';
+    headerLogin.style.display = '';
+    headerMain.style.display = 'none';
+    if (secLogin) secLogin.style.display = 'none';
+    // 重置登录表单
+    document.getElementById('spdUrl').value = '';
+  }
+}
+
+// SPD 登录
+async function whutLogin() {
+  const spdUrl = document.getElementById('spdUrl').value.trim();
+  if (!spdUrl) { whutShowLoginMsg('请粘贴智慧体育链接', false); return; }
+
+  whutShowLoginMsg('登录中...', false);
+  const btn = document.querySelector('#loginView .btn-primary');
+  btn.textContent = '登录中...';
+
+  try {
+    const resp = await fetch('/api/whut/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: spdUrl }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || '登录失败');
+
+    whutAuth = data;
+    localStorage.setItem('whutAuth', JSON.stringify(whutAuth));
+    whutShowLoginMsg(`欢迎, ${data.name || data.student_num}`, true);
+    whutUpdateUI();
+    document.getElementById('spdUrl').value = '';
+  } catch (e) {
+    whutShowLoginMsg('登录失败: ' + e.message, false);
+  } finally {
+    btn.textContent = '登录';
+  }
+}
+
+// 退出登录
+function whutLogout() {
+  whutAuth = null;
+  localStorage.removeItem('whutAuth');
+  // 重置所有 submit 相关 UI
+  ['sec-whut-submit', 'sec-whut-submit-mobile'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  ['whutResult', 'whutResultMobile'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  whutUpdateUI();
+}
+
+function whutShowLoginMsg(text, isOk) {
+  const status = document.getElementById('loginStatus');
+  if (!status) return;
+  status.textContent = text;
+  status.className = 'whut-status' + (isOk ? ' ok' : '');
+}
+
+// 匹配 baogps 打卡点 → WHUT 打卡点 ID
+function whutMatchCheckins(checkinPoints) {
+  const matched = [];
+  for (const cp of (checkinPoints || [])) {
+    if (!cp.active) continue;
+    const lat = parseFloat(cp.lat);
+    const lng = parseFloat(cp.lng);
+    if (isNaN(lat) || isNaN(lng)) continue;
+    for (const [id, whut] of Object.entries(WHUT_CP)) {
+      if (haversine(lat, lng, whut.lat, whut.lng) <= 50) {
+        matched.push({ cp_id: id, name: whut.name });
+        break;
+      }
+    }
+  }
+  return matched;
+}
+
+// 开始跑步：生成 JSON + 显示提交区
+function whutStartRun() {
+  // 同步移动端输入到桌面端
+  const tMobile = document.getElementById('totalTimeMobile');
+  const sMobile = document.getElementById('sampleIntervalMobile');
+  if (tMobile) document.getElementById('totalTime').value = tMobile.value;
+  if (sMobile) document.getElementById('sampleInterval').value = sMobile.value;
+
+  generateJSON();
+  if (!state._lastJSON) { alert('请先绘制轨迹'); return; }
+
+  const matched = whutMatchCheckins(state.images[state.currentIdx].checkinPoints);
+  if (matched.length < 2) { alert('请至少激活2个打卡点并匹配到WHUT打卡点（需在打卡点50m范围内）'); return; }
+
+  // 存储跑步数据
+  state._whutRunData = {
+    trackPts: JSON.parse(state._lastJSON),
+    totalTime: parseInt(document.getElementById('totalTime').value) || 3600,
+    cpIds: matched.map(m => m.cp_id),
+  };
+
+  // 计算距离
+  const allPts = getAllRawPoints();
+  const totalM = pixelToMeters(calcPixelDist(allPts));
+
+  // 更新 UI
+  const cpText = matched.map(m => `${m.name}(CP${m.cp_id})`).join(', ');
+  whutSetEl('whutCpInfo', '打卡点：' + cpText);
+  whutSetEl('whutDistance', (totalM/1000).toFixed(3) + ' km');
+
+  // 显示提交区域，隐藏之前的结果
+  document.getElementById('sec-whut-submit').style.display = '';
+  const subM = document.getElementById('sec-whut-submit-mobile');
+  if (subM) {
+    subM.style.display = '';
+    whutSetEl('whutCpInfoMobile', '打卡点：' + cpText);
+    whutSetEl('whutDistanceMobile', (totalM/1000).toFixed(3) + ' km');
+  }
+  // 隐藏旧结果
+  whutResultHide();
+}
+
+// 切换跑步模式
+function setRunMode(mode) {
+  whutRunMode = mode;
+  // 桌面端 + 移动端按钮样式
+  const toggle = (activeId, inactiveId) => {
+    const a = document.getElementById(activeId);
+    const b = document.getElementById(inactiveId);
+    if (a) a.className = 'btn run-mode-btn active';
+    if (b) b.className = 'btn run-mode-btn';
+  };
+  if (mode === 'free') {
+    toggle('modeFree', 'modeScored');
+    toggle('modeFreeMobile', 'modeScoredMobile');
+  } else {
+    toggle('modeScored', 'modeFree');
+    toggle('modeScoredMobile', 'modeFreeMobile');
+  }
+}
+
+// 提交跑步
+async function whutSubmit() {
+  if (!whutAuth) { alert('请先登录'); return; }
+  if (!state._whutRunData) { alert('请先点击"开始跑步"'); return; }
+
+  const { trackPts, totalTime, cpIds } = state._whutRunData;
+
+  // 显示进度条
+  whutSetStyle('whutProgress', 'display', '');
+  whutSetStyle('whutProgressMobile', 'display', '');
+  whutSetEl('whutProgressText', '提交中...');
+  whutSetEl('whutProgressTextMobile', '提交中...');
+  whutSetStyle('whutProgressFill', 'width', '0%');
+  whutSetStyle('whutProgressFillMobile', 'width', '0%');
+  whutResultHide();
+
+  try {
+    const resp = await fetch('/api/whut/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auth: whutAuth, trackPts, totalTime, cpIds, mode: whutRunMode }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || '提交失败');
+
+    whutJobId = data.jobId;
+    whutStartPolling();
+  } catch (e) {
+    whutSetEl('whutProgressText', '错误: ' + e.message);
+    whutSetEl('whutProgressTextMobile', '错误: ' + e.message);
+  }
+}
+
+// 轮询
+function whutStartPolling() {
+  if (whutPollTimer) clearInterval(whutPollTimer);
+  whutPollTimer = setInterval(whutPollStatus, 2000);
+}
+
+function whutPollStatus() {
+  if (!whutJobId) return;
+  fetch('/api/whut/job/' + whutJobId)
+    .then(r => r.json())
+    .then(data => {
+      whutSetStyle('whutProgressFill', 'width', data.progress + '%');
+      whutSetStyle('whutProgressFillMobile', 'width', data.progress + '%');
+      whutSetEl('whutProgressText', data.message || '运行中');
+      whutSetEl('whutProgressTextMobile', data.message || '运行中');
+
+      if (data.status === 'done') {
+        clearInterval(whutPollTimer);
+        whutPollTimer = null;
+        whutSetStyle('whutProgressFill', 'width', '100%');
+        whutSetStyle('whutProgressFillMobile', 'width', '100%');
+        setTimeout(() => whutShowResult(data.result), 500);
+      } else if (data.status === 'error') {
+        clearInterval(whutPollTimer);
+        whutPollTimer = null;
+        whutSetEl('whutProgressText', '失败: ' + (data.error || '未知错误'));
+        whutSetEl('whutProgressTextMobile', '失败: ' + (data.error || '未知错误'));
+      }
+    })
+    .catch(e => {
+      whutSetEl('whutProgressText', '轮询失败: ' + e.message);
+      whutSetEl('whutProgressTextMobile', '轮询失败: ' + e.message);
+    });
+}
+
+// 显示结果卡片
+function whutShowResult(result) {
+  if (!result) return;
+  // 隐藏进度条
+  whutSetStyle('whutProgress', 'display', 'none');
+  whutSetStyle('whutProgressMobile', 'display', 'none');
+
+  const statusOk = result.status === '1' || result.status === 1 || (result.reason && result.reason.includes('成功'));
+  const statusText = statusOk ? '完成' : '失败';
+  const statusClass = statusOk ? 'run-status-ok' : 'run-status-fail';
+  const reasonClass = statusOk ? 'success' : 'fail';
+  const reasonText = result.reason || (statusOk ? '跑步记录已保存' : '未知错误');
+
+  const cardHtml = `
+    <div class="run-row"><span class="run-label">记录ID</span><span class="run-value">${result.record_id || '-'}</span></div>
+    <div class="run-row"><span class="run-label">距离</span><span class="run-value">${result.distance ? result.distance.toFixed(3) : '-'} km</span></div>
+    <div class="run-row"><span class="run-label">配速</span><span class="run-value">${result.pace || '-'}</span></div>
+    <div class="run-row"><span class="run-label">用时</span><span class="run-value">${result.time || '-'}s</span></div>
+    <div class="run-row"><span class="run-label">状态</span><span class="run-value ${statusClass}">${statusText}</span></div>
+    <div class="run-reason ${reasonClass}">${reasonText}</div>
+  `;
+
+  const card = document.getElementById('whutResult');
+  const cardMobile = document.getElementById('whutResultMobile');
+  if (card) { card.innerHTML = cardHtml; card.style.display = ''; }
+  if (cardMobile) { cardMobile.innerHTML = cardHtml; cardMobile.style.display = ''; }
+}
+
+function whutResultHide() {
+  ['whutResult', 'whutResultMobile'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+  });
+}
+
+// 双端 UI 辅助
+function whutSetEl(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+function whutSetStyle(id, prop, val) {
+  const el = document.getElementById(id);
+  if (el) el.style[prop] = val;
 }

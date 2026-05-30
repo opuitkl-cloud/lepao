@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轨迹绘制 · GPS Mapper</title>
+<link rel="stylesheet" href="css/style.css?v=3">
+</head>
+<body>
+
+<header>
+  <div class="logo">GPS<span>/</span>TRACER</div>
+  <div class="header-stats">
+    <div class="stat"><div class="stat-label">总距离</div><div class="stat-value" id="totalDistStat">0 m</div></div>
+    <div class="stat"><div class="stat-label">记录点</div><div class="stat-value" id="recordedPtsStat">0</div></div>
+    <div class="stat"><div class="stat-label">均速</div><div class="stat-value" id="avgSpeedStat">0 m/s</div></div>
+  </div>
+</header>
+
+<div class="main-layout">
+
+<!-- PAGE 1: Main (layers + params) -->
+<div class="mobile-page active" id="page-main">
+
+<div class="sidebar">
+
+  <!-- 1. 图层管理 (collapsible) -->
+  <div class="section" id="sec-layer">
+    <div class="sec-title collapsible" id="layerTitle" onclick="toggleSection('layerTitle','layerBody')">
+      图层管理 <span class="collapse-arrow">▾</span>
+    </div>
+    <div class="sec-body" id="layerBody">
+      <div class="img-tabs" id="imgTabs"></div>
+      <button class="add-tab-btn" onclick="addImageTab()">＋ 添加图层</button>
+
+      <div style="margin-top:10px;">
+        <div style="font-family:'Quicksand',monospace;font-size:10px;color:var(--text-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.1em;">打卡点</div>
+        <div class="checkin-list" id="checkinList"></div>
+        <div class="btn-row">
+          <button class="btn btn-ghost" style="font-size:11px;" onclick="addCheckinPoint()">＋ 添加打卡点</button>
+          <button class="btn btn-ghost" style="font-size:11px;" onclick="importCheckins()">批量导入</button>
+        </div>
+      </div>
+
+      <div style="margin-top:12px;font-family:'Quicksand',monospace;font-size:10px;color:var(--text-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.1em;">地图图片 & 坐标</div>
+      <label>地图图片</label>
+      <input type="file" accept="image/*" id="imgUpload" onchange="loadImage(event)">
+      <label>图片路径（data/ 下）</label>
+      <input type="text" id="imgPath" placeholder="data/map1.png" onchange="loadImageFromPath(this.value)">
+      <div style="margin-top:8px;font-family:'Quicksand',monospace;font-size:10px;color:var(--text-dim);margin-bottom:2px;">右上角坐标（NE）</div>
+      <div class="coord-row">
+        <div><label>纬度 Lat</label><input type="number" step="0.000001" id="neLat" placeholder="40.123456"></div>
+        <div><label>经度 Lng</label><input type="number" step="0.000001" id="neLng" placeholder="116.654321"></div>
+      </div>
+      <div style="margin-top:6px;font-family:'Quicksand',monospace;font-size:10px;color:var(--text-dim);margin-bottom:2px;">左下角坐标（SW）</div>
+      <div class="coord-row">
+        <div><label>纬度 Lat</label><input type="number" step="0.000001" id="swLat" placeholder="40.000000"></div>
+        <div><label>经度 Lng</label><input type="number" step="0.000001" id="swLng" placeholder="116.500000"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Enter Draw Button (mobile only) -->
+  <button class="btn btn-primary enter-draw-btn" onclick="switchToDrawPage()" style="margin:12px 14px; width: calc(100% - 28px);">▶ 进入绘制</button>
+
+  <!-- 2. 绘制控制 (desktop) -->
+  <div class="section sec-drawing-desktop" id="sec-drawing-desktop">
+    <div class="sec-title">绘制控制</div>
+    <p style="font-size:11px;color:var(--text);margin:0 0 8px;line-height:1.6;padding:8px 10px;background:rgba(0,229,255,.05);border-left:2px solid var(--accent);border-radius:0 4px 4px 0;">画的越快，跑的越快，但再快也快不过时间设定的上限</p>
+    <button class="btn btn-primary" id="drawBtn" onclick="toggleDrawing()" style="margin-top:0; width:100%;">▶ 开始绘制</button>
+    <button class="btn btn-danger" onclick="clearTrack()">✕ 清除轨迹</button>
+  </div>
+
+  <!-- 4. 运动参数 -->
+  <div class="section" id="sec-motion">
+    <div class="sec-title">运动参数</div>
+    <label>运动总时间（秒）</label>
+    <input type="number" id="totalTime" value="3600" min="1">
+    <label>采样间隔（每N个原始点）</label>
+    <input type="number" id="sampleInterval" value="20" min="1" max="100">
+    <div class="points-info" style="margin-top:6px;">
+      原始点：<span id="rawPtCount">0</span> &nbsp; 记录点：<span id="recPtCount">0</span>
+    </div>
+    <button class="btn btn-primary" onclick="generateJSON()" style="margin-top:8px;">⚡ 生成 GPS JSON</button>
+  </div>
+
+  <!-- 5. JSON 输出 -->
+  <div class="section" id="sec-json">
+    <div class="sec-title">JSON 输出</div>
+    <div class="checkin-result" id="checkinResult"><span class="miss">尚未计算打卡</span></div>
+    <div class="json-preview" id="jsonOutput">// 点击"生成 GPS JSON"</div>
+    <button class="btn btn-ghost" onclick="copyJSON()">⎘ 复制 JSON</button>
+    <button class="btn btn-ghost" onclick="downloadJSON()" style="margin-top:4px;">↓ 下载 JSON</button>
+  </div>
+
+</div><!-- /sidebar -->
+
+</div><!-- /page-main -->
+
+<!-- PAGE 2: Draw sidebar (mobile only) -->
+<div class="mobile-page" id="page-draw">
+
+<div class="sidebar">
+
+  <!-- 2. 绘制控制 -->
+  <div class="section" id="sec-drawing">
+    <div class="sec-title">绘制控制</div>
+    <p style="font-size:11px;color:var(--text);margin:0 0 8px;line-height:1.6;padding:8px 10px;background:rgba(0,229,255,.05);border-left:2px solid var(--accent);border-radius:0 4px 4px 0;">画的越快，跑的越快，但再快也快不过时间设定的上限</p>
+    <button class="btn btn-primary" id="drawBtnMobile" onclick="toggleDrawing()" style="margin-top:0; width:100%;">▶ 开始绘制</button>
+    <button class="btn btn-danger" onclick="clearTrack()">✕ 清除轨迹</button>
+  </div>
+
+</div><!-- /sidebar -->
+
+</div><!-- /page-draw -->
+
+<!-- Mobile Back Button -->
+<div class="mobile-back-btn">
+  <button class="btn btn-ghost" onclick="switchToMainPage()">◂ 返回主页面</button>
+</div>
+
+<!-- CANVAS (shared desktop & mobile) -->
+<div class="canvas-area">
+  <div class="canvas-wrapper" id="canvasWrapper">
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon"> </div>
+      <div class="empty-text">上传地图图片开始绘制</div>
+    </div>
+    <div class="canvas-container" id="canvasContainer" style="display:none;">
+      <canvas id="bgCanvas"></canvas>
+      <canvas id="drawCanvas"></canvas>
+    </div>
+  </div>
+
+  <div class="coord-display" id="coordDisplay">x:— y:— | lat:— lng:—</div>
+</div>
+
+</div><!-- /main-layout -->
+
+<div class="copy-note" id="copyNote">已复制到剪贴板</div>
+
+<script src="js/app.js?v=4"></script>
+</body>
+</html>

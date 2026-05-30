@@ -15,7 +15,6 @@ function saveToStorage() {
     return {
       imgPath: isPath ? l.imgSrc : null,
       neLat: l.neLat, neLng: l.neLng, swLat: l.swLat, swLng: l.swLng,
-      trackSegments: l.trackSegments,
       checkinPoints: l.checkinPoints || [],
     };
   });
@@ -46,7 +45,7 @@ function loadFromStorage() {
         state.images.push({
           img: null, imgSrc: imgSrc,
           neLat: l.neLat||'', neLng: l.neLng||'', swLat: l.swLat||'', swLng: l.swLng||'',
-          trackSegments: l.trackSegments || [],
+          trackSegments: [],
           checkinPoints: l.checkinPoints || [],
         });
         if (imgSrc) {
@@ -70,9 +69,10 @@ function loadFromStorage() {
 function switchToDrawPage() {
   document.getElementById('page-main').classList.remove('active');
   document.getElementById('page-draw').classList.add('active');
+  window.scrollTo(0, 0);
   // Mobile: recalculate canvas after layout change
   const cur = state.images[state.currentIdx];
-  if (cur && cur.img) setTimeout(() => showCanvas(cur.img), 50);
+  if (cur && cur.img) setTimeout(() => { showCanvas(cur.img); redrawAll(); }, 50);
 }
 
 function switchToMainPage() {
@@ -245,12 +245,18 @@ function showCanvas(img) {
 }
 
 // ══ DRAWING CONTROLS ════════════════════════════════════
+function setDrawBtnState(text, cls) {
+  ['drawBtn','drawBtnMobile'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) { b.textContent = text; b.className = cls; }
+  });
+}
+
 function toggleDrawing() {
-  const btn = document.getElementById('drawBtn') || document.getElementById('drawBtnMobile');
   if (!state.isDrawing) {
     if (!state.images[state.currentIdx].img) { alert('请先上传地图图片'); return; }
     state.isDrawing=true; state.isPaused=false; state.lastPos=null; state.currentSegment=[];
-    btn.textContent='⏸ 结束绘制'; btn.className='btn btn-danger';
+    setDrawBtnState('⏸ 结束绘制','btn btn-danger');
     setStatus('drawing','绘制中');
   } else if (!state.isPaused) {
     if (state.currentSegment.length>0) {
@@ -258,11 +264,12 @@ function toggleDrawing() {
       state.currentSegment=[];
     }
     state.isPaused=true; state.lastPos=null;
-    btn.textContent='▶ 继续绘制'; btn.className='btn btn-primary';
+    setDrawBtnState('▶ 继续绘制','btn btn-primary');
     setStatus('paused','已暂停');
+    saveToStorage();
   } else {
     state.isPaused=false; state.currentSegment=[]; state.lastPos=null;
-    btn.textContent='⏸ 结束绘制'; btn.className='btn btn-danger';
+    setDrawBtnState('⏸ 结束绘制','btn btn-danger');
     setStatus('drawing','绘制中');
   }
 }
@@ -281,8 +288,7 @@ function clearTrack() {
   const cur = state.images[state.currentIdx];
   cur.trackSegments=[]; state.currentSegment=[]; state.lastPos=null;
   state.isDrawing=false; state.isPaused=false;
-  const btn = document.getElementById('drawBtn') || document.getElementById('drawBtnMobile');
-  if (btn) { btn.textContent='▶ 开始绘制'; btn.className='btn btn-primary'; }
+  setDrawBtnState('▶ 开始绘制','btn btn-primary');
   setStatus('idle','待机');
   redrawAll(); updateStats(); updatePointInfo();
   document.getElementById('jsonOutput').textContent='// 点击"生成 GPS JSON"';
@@ -307,13 +313,19 @@ function onMouseDown(e) {
   if (!state.isDrawing||state.isPaused) { handleCheckinClick(pos); return; }
   state.lastPos=pos; state.currentSegment.push(pos); drawDot(pos);
 }
+let saveTimer = null;
+function scheduleSave() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => { saveToStorage(); saveTimer = null; }, 2000);
+}
+
 function onMouseMove(e) {
   const pos = getPos(e);
   updateCoordDisplay(pos);
   if (!state.isDrawing||state.isPaused||!state.lastPos||e.buttons!==1) return;
   drawLine(state.lastPos, pos);
   state.currentSegment.push(pos); state.lastPos=pos;
-  updateStats(); updatePointInfo();
+  updateStats(); updatePointInfo(); scheduleSave();
 }
 function onMouseUp()  { stopIfDrawing(); }
 
@@ -423,7 +435,10 @@ function updateStats() {
   const sampled = Math.floor(pts.length/iv) + (pts.length>0 && (pts.length-1)%iv!==0 ? 1 : 0);
   document.getElementById('totalDistStat').textContent = d>=1000?(d/1000).toFixed(3)+' km':d.toFixed(1)+' m';
   document.getElementById('recordedPtsStat').textContent = pts.length<2 ? 0 : sampled;
-  document.getElementById('avgSpeedStat').textContent = (d/t).toFixed(2)+' m/s';
+  const paceMin = d>0 ? t/60/(d/1000) : 0;
+  const paceM = Math.floor(paceMin);
+  const paceS = Math.round((paceMin-paceM)*60);
+  document.getElementById('avgSpeedStat').textContent = d>0 ? paceM+':'+String(paceS).padStart(2,'0') : '0:00';
 }
 function updatePointInfo() {
   const pts=getAllRawPoints(), iv=+(document.getElementById('sampleInterval').value)||20;
@@ -490,15 +505,17 @@ function generateJSON() {
     }
   }
 
-  // Build points
+  // Build points (b carries forward from milestone)
+  let currentB = undefined;
   const pts=sampled.map((p,i) => {
     const g=pixelToGPS(p.x,p.y);
+    if (milestoneIdx[i]!==undefined) currentB=milestoneIdx[i];
     const pt={
       a: g?parseFloat(g.lat.toFixed(6)):null,
       o: g?parseFloat(g.lng.toFixed(6)):null,
-      s: parseFloat((i<speeds.length?speeds[i]:0).toFixed(2)),
     };
-    if (milestoneIdx[i]!==undefined) pt.b=milestoneIdx[i];
+    if (i > 0) pt.s = parseFloat((i<speeds.length?speeds[i]:0).toFixed(2));
+    if (currentB!==undefined) pt.b=currentB;
     return pt;
   });
 
@@ -587,11 +604,12 @@ function drawCheckinPoints() {
     const lat=parseFloat(pt.lat), lng=parseFloat(pt.lng);
     if (isNaN(lat)||isNaN(lng)) return;
     const pos=gpsToPixel(lat,lng); if (!pos) return;
-    const r=(pt.size||30)/2;
+    const r=(pt.size||20)/2;
+    const color = pt.active?'#fb7299':'#4fffec';
     // Draw circle
     drawCtx.beginPath();
     drawCtx.arc(pos.x, pos.y, r, 0, Math.PI*2);
-    drawCtx.strokeStyle = pt.active?'#fb7299':'#4fffec';
+    drawCtx.strokeStyle = color;
     drawCtx.lineWidth=2;
     if (pt.active) { drawCtx.shadowBlur=14; drawCtx.shadowColor='#fb7299'; }
     drawCtx.stroke(); drawCtx.shadowBlur=0;
@@ -599,8 +617,7 @@ function drawCheckinPoints() {
     drawCtx.beginPath();
     drawCtx.moveTo(pos.x-r*.4, pos.y);
     drawCtx.lineTo(pos.x+r*.4, pos.y);
-    drawCtx.strokeStyle=pt.active?'#fb7299':'#4fffec';
-    drawCtx.lineWidth=2; drawCtx.stroke();
+    drawCtx.strokeStyle=color; drawCtx.lineWidth=2; drawCtx.stroke();
   });
 }
 
@@ -610,7 +627,7 @@ function handleCheckinClick(pos) {
     const lat=parseFloat(pt.lat), lng=parseFloat(pt.lng);
     if (isNaN(lat)||isNaN(lng)) return;
     const p=gpsToPixel(lat,lng); if (!p) return;
-    const r=(pt.size||30)/2+4;
+    const r=Math.max((pt.size||20)/2+10, 20);
     const dx=pos.x-p.x, dy=pos.y-p.y;
     if (Math.sqrt(dx*dx+dy*dy)<=r) toggleCheckin(i);
   });
@@ -630,7 +647,7 @@ function computeCheckins(pts, times) {
       const p=pts[i];
       if (p.a==null||p.o==null) continue;
       if (haversine(p.a,p.o,cpLat,cpLng)<=200) {
-        html+=`<div><span class="hit">✓ CP${cp.id} ${cp.name}</span>　${p.a.toFixed(6)}, ${p.o.toFixed(6)}　t=${elapsed.toFixed(1)}s</div>`;
+        html+=`<div><span class="hit">✓ CP${cp.id} ${cp.name}</span>　第${i+1}点　t=${Math.round(elapsed)}s</div>`;
         found=true; break;
       }
     }

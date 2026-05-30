@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>轨迹绘制 · GPS Mapper</title>
-<link rel="stylesheet" href="css/style.css?v=3">
+<link rel="stylesheet" href="css/style.css?v=5">
 </head>
 <body>
 
@@ -13,7 +13,7 @@
   <div class="header-stats">
     <div class="stat"><div class="stat-label">总距离</div><div class="stat-value" id="totalDistStat">0 m</div></div>
     <div class="stat"><div class="stat-label">记录点</div><div class="stat-value" id="recordedPtsStat">0</div></div>
-    <div class="stat"><div class="stat-label">均速</div><div class="stat-value" id="avgSpeedStat">0 m/s</div></div>
+    <div class="stat"><div class="stat-label">平均配速</div><div class="stat-value" id="avgSpeedStat">0:00</div></div>
   </div>
 </header>
 
@@ -34,7 +34,7 @@
       <button class="add-tab-btn" onclick="addImageTab()">＋ 添加图层</button>
 
       <div style="margin-top:10px;">
-        <div style="font-family:'Quicksand',monospace;font-size:10px;color:var(--text-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.1em;">打卡点</div>
+        <div style="font-family:'Quicksand',monospace;font-size:10px;color:var(--glow);margin-bottom:4px;text-transform:uppercase;letter-spacing:.1em;text-shadow:0 0 8px var(--glow);">打卡点</div>
         <div class="checkin-list" id="checkinList"></div>
         <div class="btn-row">
           <button class="btn btn-ghost" style="font-size:11px;" onclick="addCheckinPoint()">＋ 添加打卡点</button>

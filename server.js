@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const zlib = require('zlib');
 const CryptoJS = require('crypto-js');
 
 const PORT = 6660;
@@ -9,9 +10,20 @@ const SETTINGS_FILE = path.join(__dirname, 'data', 'settings.json');
 const HISTORY_FILE = path.join(__dirname, 'data', 'whut_history.json');
 
 const MIME = {
-  '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
-  '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml',
+  '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8', '.png': 'image/png',
+  '.jpg': 'image/jpeg', '.svg': 'image/svg+xml',
 };
+
+// ═══ 内存缓存 ═══
+let settingsCache = null;
+let settingsCacheTime = 0;
+let historyCache = null;
+let historyCacheTime = 0;
+const staticCache = new Map();      // path -> { data, mime, mtime }
+const STATIC_TTL = 60000;           // 静态文件缓存 1 分钟
+const CACHE_TTL = 3000;             // settings/history 缓存 3 秒
 
 // ══════════════════════════════════════════════════════════════
 // WHUT API（嵌入版，不依赖外部文件）
@@ -207,22 +219,41 @@ function ensureDataDir() {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
-function saveHistory(result) {
-  ensureDataDir();
-  let history = [];
+function loadSettings() {
+  const now = Date.now();
+  if (settingsCache && now - settingsCacheTime < CACHE_TTL) return settingsCache;
   try {
-    if (fs.existsSync(HISTORY_FILE)) history = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8'));
-  } catch (e) { /* ignore */ }
-  history.unshift({ ...result, createdAt: new Date().toISOString() });
-  if (history.length > 50) history = history.slice(0, 50);
-  fs.writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2), 'utf-8');
+    settingsCache = fs.readFileSync(SETTINGS_FILE, 'utf-8');
+    settingsCacheTime = now;
+    return settingsCache;
+  } catch { return 'null'; }
+}
+
+function saveSettings(data) {
+  settingsCache = data;
+  settingsCacheTime = Date.now();
+  ensureDataDir();
+  fs.writeFileSync(SETTINGS_FILE, data, 'utf-8');
 }
 
 function loadHistory() {
+  const now = Date.now();
+  if (historyCache && now - historyCacheTime < CACHE_TTL) return historyCache;
   try {
-    if (fs.existsSync(HISTORY_FILE)) return JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8'));
-  } catch (e) { /* ignore */ }
-  return [];
+    historyCache = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8'));
+    historyCacheTime = now;
+  } catch { historyCache = []; }
+  return historyCache;
+}
+
+function saveHistory(result) {
+  const h = loadHistory();
+  h.unshift({ ...result, createdAt: new Date().toISOString() });
+  if (h.length > 50) h.length = 50;
+  historyCache = h;
+  historyCacheTime = Date.now();
+  ensureDataDir();
+  fs.writeFileSync(HISTORY_FILE, JSON.stringify(h, null, 2), 'utf-8');
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -261,6 +292,35 @@ function sendJSON(res, code, data) {
   res.end(JSON.stringify(data));
 }
 
+function serveFile(filePath, data, mime, res, req) {
+  const acceptGzip = req.headers['accept-encoding'] || '';
+  // 文本类文件才 gzip
+  const textTypes = ['text/', 'application/javascript', 'application/json'];
+  const isText = textTypes.some(t => mime.startsWith(t));
+  let gz = null;
+
+  if (isText && acceptGzip.includes('gzip')) {
+    gz = zlib.gzipSync(data);
+  }
+
+  // 写入缓存
+  staticCache.set(filePath, { raw: data, gz, mime, time: Date.now() });
+  // 控制缓存大小
+  if (staticCache.size > 50) {
+    const oldest = staticCache.keys().next().value;
+    if (oldest) staticCache.delete(oldest);
+  }
+
+  const headers = {
+    'Content-Type': mime,
+    'Vary': 'Accept-Encoding',
+    'Cache-Control': 'no-cache, must-revalidate',
+  };
+  if (gz) headers['Content-Encoding'] = 'gzip';
+  res.writeHead(200, headers);
+  res.end(gz || data);
+}
+
 const server = http.createServer(async (req, res) => {
   const urlPath = req.url.split('?')[0];
   const time = new Date().toLocaleTimeString();
@@ -270,15 +330,13 @@ const server = http.createServer(async (req, res) => {
 
   if (urlPath === '/api/settings') {
     if (req.method === 'GET') {
-      const data = fs.existsSync(SETTINGS_FILE) ? fs.readFileSync(SETTINGS_FILE, 'utf-8') : 'null';
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(data);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(loadSettings());
     } else if (req.method === 'POST') {
       let body = '';
       req.on('data', chunk => body += chunk);
       req.on('end', () => {
-        fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
-        fs.writeFileSync(SETTINGS_FILE, body, 'utf-8');
+        saveSettings(body);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end('{"ok":true}');
       });
@@ -358,29 +416,77 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ═══ 静态文件 ═══
+  // ═══ 静态文件（内存缓存 + gzip） ═══
   let filePath = path.join(__dirname, urlPath === '/' ? 'index.html' : urlPath);
   const ext = path.extname(filePath);
   const mime = MIME[ext] || 'application/octet-stream';
 
+  // 检查缓存
+  const cached = staticCache.get(filePath);
+  if (cached && Date.now() - cached.time < STATIC_TTL) {
+    const acceptGzip = req.headers['accept-encoding'] || '';
+    const useGzip = acceptGzip.includes('gzip') && cached.gz;
+    const h = { 'Content-Type': cached.mime, 'Cache-Control': 'no-cache, must-revalidate' };
+    if (useGzip) h['Content-Encoding'] = 'gzip';
+    res.writeHead(200, h);
+    res.end(useGzip ? cached.gz : cached.raw);
+    return;
+  }
+
   fs.readFile(filePath, (err, data) => {
     if (err) {
+      // 尝试 index.html fallback（SPA 路由）
+      if (ext === '' || ext === '.html') {
+        filePath = path.join(__dirname, 'index.html');
+        fs.readFile(filePath, (err2, data2) => {
+          if (err2) { res.writeHead(404); res.end('Not Found'); return; }
+          serveFile(filePath, data2, 'text/html; charset=utf-8', res, req);
+        });
+        return;
+      }
       res.writeHead(404);
       res.end('Not Found');
       return;
     }
-    res.writeHead(200, {
-      'Content-Type': mime,
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-    });
-    res.end(data);
+    serveFile(filePath, data, mime, res, req);
   });
 });
 
+server.maxHeadersCount = 2000;
+server.timeout = 120000;
+server.keepAliveTimeout = 15000;
+
+// ═══ HTTPS（可选） ═══
+const HTTPS_PORT = 6661;
+const CERT_DIR = path.join(__dirname, 'data');
+const certFile = path.join(CERT_DIR, 'cert.pem');
+const keyFile = path.join(CERT_DIR, 'key.pem');
+
+(function tryHTTPS() {
+  if (!fs.existsSync(certFile) || !fs.existsSync(keyFile)) {
+    try {
+      const cp = require('child_process');
+      cp.execSync(`openssl req -x509 -newkey rsa:2048 -keyout "${keyFile}" -out "${certFile}" -days 365 -nodes -subj "/CN=localhost/O=huipao"`, { stdio: 'ignore' });
+      console.log('已生成自签名证书');
+    } catch (e) {
+      console.log('HTTPS 不可用（需要安装 openssl 或提供 cert.pem/key.pem）');
+      return;
+    }
+  }
+  try {
+    const https = require('https');
+    const credentials = { key: fs.readFileSync(keyFile), cert: fs.readFileSync(certFile) };
+    const httpsServer = https.createServer(credentials, (req, res) => server.emit('request', req, res));
+    httpsServer.listen(HTTPS_PORT, '0.0.0.0', () => {
+      console.log(`HTTPS  https://localhost:${HTTPS_PORT}/`);
+    });
+  } catch (e) {
+    console.log('HTTPS 启动失败:', e.message);
+  }
+})();
+
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running at http://localhost:${PORT}/`);
+  console.log(`HTTP   http://localhost:${PORT}/`);
   const ips = getLocalIPs();
-  ips.forEach(({ name, ip }) => console.log(`  ${name}: http://${ip}:${PORT}/`));
+  ips.forEach(({ name, ip }) => console.log(`       http://${ip}:${PORT}/`));
 });

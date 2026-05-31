@@ -2,33 +2,28 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const crypto = require('crypto');
+const CryptoJS = require('crypto-js');
 
-const PORT = 8766;
+const PORT = 6660;
 const SETTINGS_FILE = path.join(__dirname, 'data', 'settings.json');
-const AUTH_FILE = path.join(__dirname, 'data', 'whut_auth.json');
 const HISTORY_FILE = path.join(__dirname, 'data', 'whut_history.json');
 
 const MIME = {
-  '.html': 'text/html',
-  '.css': 'text/css',
-  '.js': 'application/javascript',
-  '.json': 'application/json',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.svg': 'image/svg+xml',
+  '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
+  '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml',
 };
 
 // ══════════════════════════════════════════════════════════════
-// WHUT API 常量
+// WHUT API（嵌入版，不依赖外部文件）
 // ══════════════════════════════════════════════════════════════
-const WHUT_AES_KEY = Buffer.from('Wet2C8d34f62ndi3', 'utf-8');
-const WHUT_AES_IV = Buffer.from('K6iv85jBD8jgf32D', 'utf-8');
-const WHUT_SIGN_SECRET = 'rDJiNB9j7vD2';
-const SPD_AES_PASSWORD = 'zths@2024$1234567';
-const API_BASE = 'https://tzcs.whut.edu.cn/v3/api.php';
-const OSS_BUCKET = 'lptiyu-ps5';
-const OSS_ENDPOINT = `https://${OSS_BUCKET}.oss-cn-hangzhou.aliyuncs.com`;
+
+const WHUT_AES_KEY  = CryptoJS.enc.Utf8.parse('Wet2C8d34f62ndi3');
+const WHUT_AES_IV   = CryptoJS.enc.Utf8.parse('K6iv85jBD8jgf32D');
+const WHUT_AES_OPTS = { iv: WHUT_AES_IV, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 };
+const SIGN_SECRET   = 'rDJiNB9j7vD2';
+const API_BASE      = 'https://tzcs.whut.edu.cn/v3/api.php';
+const OSS_BUCKET    = 'lptiyu-ps5';
+const OSS_ENDPOINT  = `https://${OSS_BUCKET}.oss-cn-hangzhou.aliyuncs.com`;
 
 const WHUT_CP = {
   '14': { lat: 30.509007, lng: 114.329637, name: '体育场北' },
@@ -37,162 +32,48 @@ const WHUT_CP = {
   '17': { lat: 30.506941, lng: 114.327894, name: '南六宿舍楼' },
   '18': { lat: 30.505217, lng: 114.331129, name: '体育馆东门' },
 };
+const CP_HIT_RADIUS = 200;
 
 const jobs = new Map();
 let jobCounter = 0;
 
-// ══════════════════════════════════════════════════════════════
-// Crypto 工具
-// ══════════════════════════════════════════════════════════════
-
-function aesEncrypt(plain) {
-  const cipher = crypto.createCipheriv('aes-128-cbc', WHUT_AES_KEY, WHUT_AES_IV);
-  return cipher.update(plain, 'utf-8', 'base64') + cipher.final('base64');
-}
-
-function aesDecrypt(ciphertext) {
-  const decipher = crypto.createDecipheriv('aes-128-cbc', WHUT_AES_KEY, WHUT_AES_IV);
-  return decipher.update(ciphertext, 'base64', 'utf-8') + decipher.final('utf-8');
-}
-
-function md5Sign(params) {
-  const sorted = Object.keys(params).sort();
-  const str = sorted.reduce((s, k) => s + k + params[k], '') + WHUT_SIGN_SECRET;
-  return crypto.createHash('md5').update(str).digest('hex');
-}
-
-function hmacSha1(key, data) {
-  return crypto.createHmac('sha1', key).update(data).digest('base64');
-}
-
 function haversine(lat1, lng1, lat2, lng2) {
-  const R = 6371000;
-  const dL = (lat2 - lat1) * Math.PI / 180;
-  const dG = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dL / 2) ** 2
-    + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dG / 2) ** 2;
+  const R = 6371000, dL = (lat2 - lat1) * Math.PI / 180, dG = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dL / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dG / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// EVP_BytesToKey — 兼容 CryptoJS 的密钥派生
-function evpBytesToKey(password, salt, keySize, ivSize) {
-  const passBuf = Buffer.from(password, 'utf-8');
-  let result = Buffer.alloc(0);
-  let last = Buffer.alloc(0);
-  while (result.length < keySize + ivSize) {
-    const input = Buffer.concat([last, passBuf, salt]);
-    const hash = crypto.createHash('md5').update(input).digest();
-    result = Buffer.concat([result, hash]);
-    last = hash;
-  }
-  return { key: result.subarray(0, keySize), iv: result.subarray(keySize, keySize + ivSize) };
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function random6() { return String(Math.floor(100000 + Math.random() * 900000)); }
+
+function encrypt(plain) { return CryptoJS.AES.encrypt(plain, WHUT_AES_KEY, WHUT_AES_OPTS).toString(); }
+function decrypt(cipher) { return CryptoJS.AES.decrypt(cipher, WHUT_AES_KEY, WHUT_AES_OPTS).toString(CryptoJS.enc.Utf8); }
+
+function signMD5(params) {
+  const sorted = Object.keys(params).sort();
+  return CryptoJS.MD5(sorted.reduce((s, k) => s + k + params[k], '') + SIGN_SECRET).toString();
 }
 
-// CryptoJS 兼容的 AES-256-CBC 加密（EVP_BytesToKey + OpenSSL 格式）
-function cryptoJsEncrypt(plaintext, password) {
-  const salt = crypto.randomBytes(8);
-  const { key, iv } = evpBytesToKey(password, salt, 32, 16);
-  const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
-  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf-8'), cipher.final()]);
-  // OpenSSL 格式: "Salted__" + salt + encrypted
-  return Buffer.concat([Buffer.from('Salted__'), salt, encrypted]).toString('base64');
+function hmacSha1(key, data) {
+  const c = require('crypto');
+  return c.createHmac('sha1', key).update(data).digest('base64');
 }
-
-function random6() {
-  return String(100000 + Math.floor(Math.random() * 900000));
-}
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// ══════════════════════════════════════════════════════════════
-// WHUT API 函数
-// ══════════════════════════════════════════════════════════════
 
 async function apiCall(endpoint, auth, extra = {}) {
-  const params = {
-    ...auth,
-    ...extra,
-    timestamp: Math.floor(Date.now() / 1000),
-    version: 1,
-    nonce: random6(),
-    ostype: '5',
-  };
-  const sign = md5Sign(params);
+  const params = { ...auth, ...extra, timestamp: Math.floor(Date.now() / 1000), version: 1, nonce: random6(), ostype: '5' };
+  const sign = signMD5(params);
   const payload = JSON.stringify({ ...params, sign });
-  const body = 'ostype=5&data=' + encodeURIComponent(aesEncrypt(payload));
+  const body = 'ostype=5&data=' + encodeURIComponent(encrypt(payload));
   const resp = await fetch(`${API_BASE}/${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body,
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body
   });
   const json = await resp.json();
-  if (json.data && json.is_encrypt) return JSON.parse(aesDecrypt(json.data));
+  if (json.data && json.is_encrypt) return JSON.parse(decrypt(json.data));
   return json;
 }
 
-// 心跳
-async function getTimestamp(auth) {
-  const { role, ...authNoRole } = auth;
-  return await apiCall('Run/getTimestampV278', { ...authNoRole, term_id: '0' });
-}
+async function beforeRun(auth) { return await apiCall('Run2/beforeRunV260', auth); }
 
-// SPD 登录
-async function spdLogin(token) {
-  // 1) 从 SPD 获取学号
-  const resp = await fetch('https://spd.whut.edu.cn/prod-api/system/user/getInfo', {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-      'Accept': 'application/json, text/plain, */*',
-      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-      'Referer': 'https://spd.whut.edu.cn/h5/',
-      'Origin': 'https://spd.whut.edu.cn',
-    },
-  });
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => '');
-    throw new Error(`SPD API ${resp.status}: ${text.slice(0, 200)}`);
-  }
-  const data = await resp.json();
-  if (data.code !== 200) throw new Error(data.msg || 'token 过期或无效');
-  const studentNum = data.user.userName;
-  const userName = data.user.nickName || '';
-
-  // 2) 加密学号（CryptoJS 兼容的 AES-256-CBC）
-  const encryptedNum = cryptoJsEncrypt(JSON.stringify(studentNum), SPD_AES_PASSWORD);
-
-  // 3) 调 whutLogin，从 302 跳转 URL 提取认证参数
-  const whutUrl = `https://tzcs.whut.edu.cn/bdlp_h5_fitness_test/public/index.php/index/login/whutLogin?type=3&studentNum=${encodeURIComponent(encryptedNum)}`;
-  const r1 = await fetch(whutUrl, { redirect: 'manual' });
-  if (r1.status !== 302) throw new Error('whutLogin 返回值异常: ' + r1.status);
-  const location = r1.headers.get('location') || '';
-  // 成功路径: h5whlg/ 开头；失败路径: casLogin.html?type=1
-  if (location.includes('casLogin.html')) throw new Error('whutLogin 认证失败，链接可能已过期');
-
-  // 4) 从 hash 中提取 auth 参数
-  const parsedUrl = new URL(location);
-  let params = {};
-  if (parsedUrl.hash && parsedUrl.hash.includes('?')) {
-    params = Object.fromEntries(new URLSearchParams(parsedUrl.hash.split('?')[1]));
-  }
-  if (!params.uid || !params.token) throw new Error('未能获取认证参数');
-
-  return {
-    uid: params.uid || '',
-    token: params.token || '',
-    card_id: params.card_id || '',
-    student_num: params.student_num || studentNum,
-    school_id: params.school_id || '5',
-    role: params.user_type || '1',
-    course_id: params.course_id || 0,
-    class_id: 0,
-    name: userName,
-  };
-}
-
-// OSS 上传
 async function ossUpload(content, auth) {
   const sts = await apiCall('WpIndex/getOssSts', auth);
   const expiration = new Date(Date.now() + 3600000).toISOString();
@@ -202,123 +83,119 @@ async function ossUpload(content, auth) {
   const dateStr = new Date().toISOString().substring(0, 10);
   const key = `Public/Upload/file/run_record/632/${dateStr}/${Date.now()}-${Math.floor(150 * Math.random())}.cn`;
   const form = new FormData();
-  form.append('key', key);
-  form.append('policy', policyB64);
-  form.append('OSSAccessKeyId', sts.AccessKeyId);
-  form.append('signature', signature);
+  form.append('key', key); form.append('policy', policyB64);
+  form.append('OSSAccessKeyId', sts.AccessKeyId); form.append('signature', signature);
   form.append('x-oss-security-token', sts.SecurityToken);
   form.append('file', new Blob([content], { type: 'text/plain' }), 'f.txt');
   await fetch(OSS_ENDPOINT, { method: 'POST', body: form });
   return key.split('Public/Upload/file/')[1];
 }
 
-// ══════════════════════════════════════════════════════════════
-// 提交跑步（异步 + 进度通知）
-// ══════════════════════════════════════════════════════════════
-
-async function submitRunSynced(auth, trackPts, totalTime, cpIds, mode, onProgress) {
-  const endpoint = mode === 'scored' ? 'Run/stopRunV278' : 'Run/stopFreeRunV220';
-
-  // 计算每个点的累计距离和相对时间
-  let cumDist = 0;
-  const totalDist = trackPts.reduce((sum, p, i) => {
-    if (i === 0) return 0;
-    return sum + haversine(trackPts[i - 1].a, trackPts[i - 1].o, p.a, p.o);
-  }, 0);
-
-  const ptsWithRelT = trackPts.map((p, i) => {
-    if (i > 0) cumDist += haversine(trackPts[i - 1].a, trackPts[i - 1].o, p.a, p.o);
-    return { ...p, _relT: Math.round((cumDist / (totalDist || 1)) * totalTime) };
+// SPD 登录
+function followRedirect(url, maxRedirects = 10) {
+  return new Promise((resolve, reject) => {
+    const mod = url.startsWith('https') ? require('https') : require('http');
+    mod.get(url, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && maxRedirects > 0)
+        resolve(followRedirect(new URL(res.headers.location, url).href, maxRedirects - 1));
+      else resolve(url);
+    }).on('error', reject);
   });
-  const actualDistKm = totalDist / 1000;
-  const paceMinKm = totalTime / 60 / (actualDistKm || 1);
+}
+async function spdLogin(token) {
+  const resp = await fetch('https://spd.whut.edu.cn/prod-api/system/user/getInfo', {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await resp.json();
+  if (data.code !== 200) throw new Error(data.msg || 'token 过期');
+  const studentNum = data.user.userName;
+  const userName = data.user.nickName || '';
+  const encryptedNum = CryptoJS.AES.encrypt(JSON.stringify(studentNum), 'zths@2024$1234567').toString();
+  const whutUrl = `https://tzcs.whut.edu.cn/bdlp_h5_fitness_test/public/index.php/index/login/whutLogin?type=3&studentNum=${encryptedNum}`;
+  const finalUrl = await followRedirect(whutUrl);
+  const parsed = new URL(finalUrl);
+  let params = {};
+  if (parsed.hash && parsed.hash.includes('?')) params = Object.fromEntries(new URLSearchParams(parsed.hash.split('?')[1]));
+  return {
+    uid: params.uid, token: params.token, card_id: params.card_id,
+    student_num: params.student_num || studentNum, school_id: params.school_id || '5',
+    role: params.user_type || '1', course_id: 0, class_id: 0, name: userName,
+  };
+}
 
-  // 开始
-  const startTime = Math.floor(Date.now() / 1000);
-  const endTime = startTime + totalTime;
+// ══════════════════════════════════════════════════════════════
+// 提交跑步（用自定义轨迹和指定时间）
+// ══════════════════════════════════════════════════════════════
+async function submitRunSynced(auth, trackPts, totalTime, cpIds, mode, onProgress, job) {
+  onProgress && onProgress(10, '提交中');
+  try {
+    const cpA = WHUT_CP[cpIds[0]], cpB = WHUT_CP[cpIds[1]];
+    if (!cpA || !cpB) throw new Error('无效打卡点: ' + cpIds.join(','));
 
-  onProgress && onProgress(10, '开始跑步');
+    // 计算距离
+    let actualDistM = 0;
+    for (let i = 1; i < trackPts.length; i++)
+      actualDistM += haversine(trackPts[i-1].a, trackPts[i-1].o, trackPts[i].a, trackPts[i].o);
+    const actualDistKm = Math.round(actualDistM) / 1000;
+    const durationS = totalTime;
+    const paceMinKm = durationS / 60 / (actualDistKm || 1);
 
-  // 心跳
-  try { await getTimestamp(auth); } catch (e) {}
-  onProgress && onProgress(20, '运动中');
+    // 相对时间
+    let cumDist = 0;
+    const pts = trackPts.map((p, i) => {
+      if (i > 0) cumDist += haversine(trackPts[i-1].a, trackPts[i-1].o, p.a, p.o);
+      return { a: p.a, o: p.o, c: p.c !== undefined ? String(p.c) : '0.00', _relT: Math.round((cumDist / (actualDistM || 1)) * durationS), _lat: p.a, _lng: p.o };
+    });
 
-  // 构建打卡点命中（在轨迹中找第一个距离打卡点 < 200m 的点）
-  const checkpoints = [];
-  for (const cpId of cpIds) {
-    const cp = WHUT_CP[cpId];
-    if (!cp) continue;
-    for (const p of ptsWithRelT) {
-      if (haversine(p.a, p.o, cp.lat, cp.lng) <= 200) {
-        checkpoints.push({
-          point_id: cpId,
-          latitude: Number(p.a.toFixed(10)),
-          longitude: Number(p.o.toFixed(10)),
-          longtitude: Number(p.o.toFixed(10)),
-          time: String(startTime + p._relT),
-        });
-        break;
+    // 1) beforeRun
+    await apiCall('Run2/beforeRunV260', auth);
+
+    // 2) OSS 上传
+    const absPts = pts.map(p => { const pt = { a: p.a, o: p.o, c: p.c }; if (p.s !== undefined) pt.s = p.s; if (p.b !== undefined) pt.b = p.b; return pt; });
+    const recordFile = await ossUpload(encrypt(JSON.stringify(absPts)), auth);
+
+    // 3) 时间
+    const realNow = Math.floor(Date.now() / 1000);
+    const startTime = realNow - 5;
+    const endTime = startTime + durationS;
+
+    // 4) 打卡点
+    const checkpoints = [];
+    let hitA = false, hitB = false;
+    for (const p of pts) {
+      const absT = startTime + p._relT;
+      if (!hitA && haversine(p._lat, p._lng, cpA.lat, cpA.lng) < CP_HIT_RADIUS) {
+        hitA = true;
+        checkpoints.push({ point_id: cpIds[0], latitude: +p._lat.toFixed(10), longitude: +p._lng.toFixed(10), longtitude: +p._lng.toFixed(10), time: String(absT) });
+      }
+      if (!hitB && haversine(p._lat, p._lng, cpB.lat, cpB.lng) < CP_HIT_RADIUS) {
+        hitB = true;
+        checkpoints.push({ point_id: cpIds[1], latitude: +p._lat.toFixed(10), longitude: +p._lng.toFixed(10), longtitude: +p._lng.toFixed(10), time: String(absT) });
       }
     }
+
+    // 5) stopRun
+    const result = await apiCall('Run/stopRunV278', auth, {
+      role: 2, term_id: 1, game_id: '1', start_time: startTime, end_time: endTime,
+      log_data: JSON.stringify(checkpoints), file_img: '', is_running_area_valid: 1,
+      mobileDeviceId: 1, mobileModel: 1, mobileOsVersion: 1,
+      step_info: JSON.stringify({ interval: 60, list: [] }),
+      step_num: 1, used_time: durationS, distance: actualDistKm,
+      record_img: '', record_file: recordFile,
+    });
+
+    const res = {
+      record_id: result.record_id, status: result.record_status || result.status,
+      distance: actualDistKm, pace: `${Math.floor(paceMinKm)}'${String(Math.floor((paceMinKm % 1) * 60)).padStart(2, '0')}"`,
+      time: durationS, reason: result.record_failed_reason || result.info || '',
+    };
+    onProgress && onProgress(100, '完成');
+    console.log('[submit] result:', JSON.stringify(res));
+    return res;
+  } catch (e) {
+    console.log('[submit] error:', e.message);
+    throw e;
   }
-
-  // 等待运动时长
-  const waitMs = Math.max(0, endTime * 1000 - Date.now());
-  if (waitMs > 0) {
-    onProgress && onProgress(40, `等待 ${Math.round(waitMs / 1000)}s`);
-    await sleep(waitMs);
-  }
-
-  // 结束心跳
-  try { await getTimestamp(auth); } catch (e) {}
-  onProgress && onProgress(60, '上传轨迹');
-
-  // OSS 上传（加密轨迹数据）
-  const uploadPts = ptsWithRelT.map(p => {
-    const pt = { a: p.a, o: p.o, c: p.c || '0.00' };
-    if (p.s !== undefined) pt.s = p.s;
-    if (p.b !== undefined) pt.b = p.b;
-    return pt;
-  });
-  const recordFile = await ossUpload(aesEncrypt(JSON.stringify(uploadPts)), auth);
-
-  onProgress && onProgress(80, '提交结果');
-  await sleep(3000);
-
-  const result = await apiCall(endpoint, auth, {
-    role: 2,
-    term_id: 1,
-    game_id: '1',
-    start_time: startTime,
-    end_time: endTime,
-    log_data: JSON.stringify(checkpoints),
-    file_img: '',
-    is_running_area_valid: 1,
-    mobileDeviceId: 1,
-    mobileModel: 1,
-    mobileOsVersion: 1,
-    step_info: JSON.stringify({ interval: 60, list: [] }),
-    step_num: 1,
-    used_time: totalTime,
-    distance: actualDistKm,
-    record_img: '',
-    record_file: recordFile,
-  });
-
-  onProgress && onProgress(100, '完成');
-
-  return {
-    record_id: result.record_id,
-    status: result.record_status || result.status,
-    distance: actualDistKm,
-    pace: `${Math.floor(paceMinKm)}'${String(Math.floor((paceMinKm % 1) * 60)).padStart(2, '0')}"`,
-    time: totalTime,
-    reason: result.record_failed_reason || result.info || '',
-    endpoint,
-    checkpoints_hit: checkpoints.map(c => ({ point_id: c.point_id, time: c.time })),
-    startTime: new Date(startTime * 1000).toISOString(),
-    endTime: new Date(endTime * 1000).toISOString(),
-  };
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -326,20 +203,8 @@ async function submitRunSynced(auth, trackPts, totalTime, cpIds, mode, onProgres
 // ══════════════════════════════════════════════════════════════
 
 function ensureDataDir() {
-  const dir = path.dirname(AUTH_FILE);
+  const dir = path.dirname(HISTORY_FILE);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-}
-
-function saveAuth(auth) {
-  ensureDataDir();
-  fs.writeFileSync(AUTH_FILE, JSON.stringify(auth, null, 2), 'utf-8');
-}
-
-function loadAuth() {
-  try {
-    if (fs.existsSync(AUTH_FILE)) return JSON.parse(fs.readFileSync(AUTH_FILE, 'utf-8'));
-  } catch (e) { /* ignore */ }
-  return null;
 }
 
 function saveHistory(result) {
@@ -403,7 +268,6 @@ const server = http.createServer(async (req, res) => {
 
   // ═══ WHUT API 路由 ═══
 
-  // 设置（原有）
   if (urlPath === '/api/settings') {
     if (req.method === 'GET') {
       const data = fs.existsSync(SETTINGS_FILE) ? fs.readFileSync(SETTINGS_FILE, 'utf-8') : 'null';
@@ -422,7 +286,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // POST /api/whut/login — SPD 登录
   if (urlPath === '/api/whut/login' && req.method === 'POST') {
     try {
       const { url: spdUrl, token: directToken } = await parseBody(req);
@@ -436,7 +299,6 @@ const server = http.createServer(async (req, res) => {
       }
       if (!token) { sendJSON(res, 400, { error: '未找到 token' }); return; }
       const auth = await spdLogin(token);
-      saveAuth(auth);
       sendJSON(res, 200, auth);
     } catch (e) {
       sendJSON(res, 401, { error: e.message });
@@ -444,7 +306,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // POST /api/whut/submit — 创建异步提交任务
   if (urlPath === '/api/whut/submit' && req.method === 'POST') {
     try {
       const { auth, trackPts, totalTime, cpIds, mode } = await parseBody(req);
@@ -456,11 +317,10 @@ const server = http.createServer(async (req, res) => {
       const job = { id: jobId, status: 'running', progress: 0, message: '初始化', result: null, error: null };
       jobs.set(jobId, job);
 
-      // 后台异步执行
-      submitRunSynced(auth, trackPts, totalTime || 3600, cpIds, mode || 'free', (pct, msg) => {
+      submitRunSynced(auth, trackPts, totalTime || 666, cpIds, mode || 'scored', (pct, msg) => {
         job.progress = pct;
         job.message = msg;
-      }).then(result => {
+      }, job).then(result => {
         job.status = 'done';
         job.result = result;
         job.progress = 100;
@@ -479,7 +339,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // GET /api/whut/job/:id — 轮询任务状态
   if (urlPath.startsWith('/api/whut/job/') && req.method === 'GET') {
     const jobId = urlPath.split('/api/whut/job/')[1];
     const job = jobs.get(jobId);
@@ -494,16 +353,8 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // GET /api/whut/history — 历史记录
   if (urlPath === '/api/whut/history' && req.method === 'GET') {
     sendJSON(res, 200, loadHistory());
-    return;
-  }
-
-  // GET /api/whut/auth — 获取保存的认证
-  if (urlPath === '/api/whut/auth' && req.method === 'GET') {
-    const auth = loadAuth();
-    sendJSON(res, 200, auth || {});
     return;
   }
 

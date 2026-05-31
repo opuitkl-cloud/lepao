@@ -1,0 +1,4 @@
+node_modules
+package-lock.json
+data/settings.json
+data/whut_history.json

@@ -35,8 +35,8 @@ function loadFromStorage() {
     .then(raw => {
       if (!raw || !raw.layers || !raw.layers.length) return false;
       if (raw.settings) {
-        document.getElementById('totalTime').value = raw.settings.totalTime || 3600;
-        document.getElementById('sampleInterval').value = raw.settings.sampleInterval || 20;
+        document.getElementById('totalTime').value = raw.settings.totalTime || 666;
+        document.getElementById('sampleInterval').value = raw.settings.sampleInterval || 6;
       }
       state.images = [];
       const promises = raw.layers.map((l, i) => new Promise(res => {
@@ -186,6 +186,7 @@ function bindCoordInputs() {
       saveCurrentCoords();
       saveToStorage();
       showSavedHint(el);
+      if (id.startsWith('ne') || id.startsWith('sw')) whutCheckCheckins();
     });
   });
 }
@@ -305,6 +306,9 @@ function clearTrack() {
   setStatus('idle','待机');
   redrawAll(); updateStats(); updatePointInfo();
   document.getElementById('jsonOutput').textContent='// 点击"生成 GPS JSON"';
+  state._lastJSON = null;
+  state._lastTimes = null;
+  whutCheckCheckins();
   saveToStorage();
 }
 
@@ -446,7 +450,8 @@ function updateStats() {
   const t=+(document.getElementById('totalTime').value)||3600;
   const iv=+(document.getElementById('sampleInterval').value)||20;
   const sampled = Math.floor(pts.length/iv) + (pts.length>0 && (pts.length-1)%iv!==0 ? 1 : 0);
-  document.getElementById('totalDistStat').textContent = d>=1000?(d/1000).toFixed(3)+' km':d.toFixed(1)+' m';
+  const distText = d>=1000?(d/1000).toFixed(3)+' km':d.toFixed(1)+' m';
+  document.getElementById('totalDistStat').textContent = distText;
   document.getElementById('recordedPtsStat').textContent = pts.length<2 ? 0 : sampled;
   const paceMin = d>0 ? t/60/(d/1000) : 0;
   const paceM = Math.floor(paceMin);
@@ -536,6 +541,7 @@ function generateJSON() {
   document.getElementById('jsonOutput').textContent = json;
   state._lastJSON = json;
   state._lastTimes = times;
+  whutCheckCheckins();
 
   // Checkin result
   document.getElementById('checkinResult').innerHTML = computeCheckins(pts, times);
@@ -609,6 +615,8 @@ function renderCheckinList() {
 `;
     list.appendChild(el);
   });
+  // 打卡点变动时同步更新运动参数栏的状态
+  whutCheckCheckins();
 }
 
 function drawCheckinPoints() {
@@ -715,7 +723,6 @@ function downloadJSON() {
 // ════════════════════════════════════════════════════════════
 
 let whutAuth = null;
-let whutRunMode = 'free';
 let whutJobId = null;
 let whutPollTimer = null;
 
@@ -757,8 +764,14 @@ function whutUpdateUI() {
     headerMain.style.display = '';
     if (secLogin) secLogin.style.display = '';
     if (authName) authName.textContent = whutAuth.name || whutAuth.student_num || '已登录';
-    // 恢复窗口尺寸
-    setTimeout(() => { window.dispatchEvent(new Event('resize')); }, 100);
+    // 恢复窗口尺寸后重新计算画布
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+      const cur = state.images[state.currentIdx];
+      if (cur && cur.img) { showCanvas(cur.img); redrawAll(); }
+    }, 100);
+    // 检查打卡状态
+    setTimeout(whutCheckCheckins, 200);
   } else {
     // 未登录 → 显示登录页
     loginView.style.display = '';
@@ -796,6 +809,7 @@ async function whutLogin() {
     document.getElementById('spdUrl').value = '';
   } catch (e) {
     whutShowLoginMsg('登录失败: ' + e.message, false);
+    document.getElementById('spdUrl').value = '';
   } finally {
     btn.textContent = '登录';
   }
@@ -805,15 +819,6 @@ async function whutLogin() {
 function whutLogout() {
   whutAuth = null;
   localStorage.removeItem('whutAuth');
-  // 重置所有 submit 相关 UI
-  ['sec-whut-submit', 'sec-whut-submit-mobile'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = 'none';
-  });
-  ['whutResult', 'whutResultMobile'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = 'none';
-  });
   whutUpdateUI();
 }
 
@@ -842,8 +847,86 @@ function whutMatchCheckins(checkinPoints) {
   return matched;
 }
 
-// 开始跑步：生成 JSON + 显示提交区
-function whutStartRun() {
+// 检查打卡状态，显示在运动参数栏
+function whutCheckCheckins() {
+  const cur = state.images[state.currentIdx];
+  if (!cur) return false;
+
+  // 先检查地图坐标是否设置
+  const neLat = +cur.neLat, neLng = +cur.neLng, swLat = +cur.swLat, swLng = +cur.swLng;
+  const hasCoordBounds = ![neLat, neLng, swLat, swLng].some(isNaN);
+
+  const matched = whutMatchCheckins(cur.checkinPoints);
+  const allCheckins = cur.checkinPoints || [];
+  const activeCount = allCheckins.filter(p => p.active && p.lat && p.lng).length;
+
+  let html = '';
+  let passed = false;
+
+  if (!hasCoordBounds && activeCount > 0) {
+    html = '<div class="cp-status-bad">⚠ 请先在「图层管理」中填写地图的右上角(NE)和左下角(SW)坐标</div>';
+  } else if (activeCount === 0) {
+    html = '<div class="cp-status-bad">⚠ 未设置打卡点，请在「图层管理」中添加</div>';
+  } else if (matched.length < 2) {
+    const matchedNames = matched.map(m => m.name).join('、');
+    html = '<div class="cp-status-bad">⚠ 打卡点配置不足 ' + matched.length + '/2';
+    if (matched.length > 0) html += '（已匹配：' + matchedNames + '）';
+    html += '<div class="cp-status-list">';
+    allCheckins.forEach(cp => {
+      if (!cp.active) return;
+      const lat = parseFloat(cp.lat);
+      const lng = parseFloat(cp.lng);
+      if (isNaN(lat) || isNaN(lng)) return;
+      const m = whutMatchCheckins([cp]);
+      if (m.length > 0) {
+        html += '<div class="hit">✓ ' + cp.name + ' → ' + m[0].name + '</div>';
+      } else {
+        html += '<div class="miss">✗ ' + cp.name + ' → 坐标不在WHUT打卡点50m内</div>';
+      }
+    });
+    html += '</div></div>';
+  } else if (!state._lastJSON) {
+    const matchedNames = matched.map(m => m.name).join('、');
+    html = '<div class="cp-status-bad">⚠ 打卡点已配置：' + matchedNames + '，请绘制轨迹并点击⚡确认生成</div>';
+  } else {
+    // 有轨迹，计算实际打卡命中
+    let trackHitHtml = '';
+    let allTrackHit = false;
+    try {
+      const pts = JSON.parse(state._lastJSON);
+      const times = state._lastTimes || pts.map(p => p.s || 1);
+      trackHitHtml = computeCheckins(pts, times);
+      allTrackHit = !trackHitHtml.includes('未打卡');
+      // 调试：显示轨迹点是否有 GPS 坐标
+      const firstPts = pts.slice(0, 3).map(p => `(${p.a},${p.o})`).join(' ');
+      if (!allTrackHit && pts.some(p => p.a == null || p.o == null)) {
+        trackHitHtml += '<div style="color:var(--text-dim);margin-top:4px;">轨迹点无GPS坐标，请检查地图NE/SW设置</div>';
+      }
+    } catch (e) {}
+
+    if (!allTrackHit) {
+      const matchedNames = matched.map(m => m.name).join('、');
+      html = '<div class="cp-status-bad">⚠ 轨迹未经过全部打卡点<div class="cp-status-list">' + trackHitHtml + '</div></div>';
+    } else {
+      const matchedNames = matched.map(m => m.name).join('、');
+      html = '<div class="cp-status-good">✅ 全部打卡完成：' + matchedNames + '<div class="cp-status-list">' + trackHitHtml + '</div></div>';
+      passed = true;
+    }
+  }
+
+  // 更新桌面和移动端的状态区
+  const el = document.getElementById('whutCpStatus');
+  if (el) el.innerHTML = html;
+  const elM = document.getElementById('whutCpStatusMobile');
+  if (elM) elM.innerHTML = html;
+
+  return passed;
+}
+
+// 开始跑步：生成 JSON + 直接提交
+async function whutStartRun() {
+  if (!whutAuth) { alert('请先登录'); return; }
+
   // 同步移动端输入到桌面端
   const tMobile = document.getElementById('totalTimeMobile');
   const sMobile = document.getElementById('sampleIntervalMobile');
@@ -853,77 +936,22 @@ function whutStartRun() {
   generateJSON();
   if (!state._lastJSON) { alert('请先绘制轨迹'); return; }
 
+  // 检查打卡状态（已在运动参数栏显示详细状态）
+  if (!whutCheckCheckins()) { return; }
+
   const matched = whutMatchCheckins(state.images[state.currentIdx].checkinPoints);
-  if (matched.length < 2) { alert('请至少激活2个打卡点并匹配到WHUT打卡点（需在打卡点50m范围内）'); return; }
 
-  // 存储跑步数据
-  state._whutRunData = {
-    trackPts: JSON.parse(state._lastJSON),
-    totalTime: parseInt(document.getElementById('totalTime').value) || 3600,
-    cpIds: matched.map(m => m.cp_id),
-  };
+  const trackPts = JSON.parse(state._lastJSON);
+  const totalTime = parseInt(document.getElementById('totalTime').value) || 666;
+  const cpIds = matched.map(m => m.cp_id);
 
-  // 计算距离
-  const allPts = getAllRawPoints();
-  const totalM = pixelToMeters(calcPixelDist(allPts));
-
-  // 更新 UI
-  const cpText = matched.map(m => `${m.name}(CP${m.cp_id})`).join(', ');
-  whutSetEl('whutCpInfo', '打卡点：' + cpText);
-  whutSetEl('whutDistance', (totalM/1000).toFixed(3) + ' km');
-
-  // 显示提交区域，隐藏之前的结果
-  document.getElementById('sec-whut-submit').style.display = '';
-  const subM = document.getElementById('sec-whut-submit-mobile');
-  if (subM) {
-    subM.style.display = '';
-    whutSetEl('whutCpInfoMobile', '打卡点：' + cpText);
-    whutSetEl('whutDistanceMobile', (totalM/1000).toFixed(3) + ' km');
-  }
-  // 隐藏旧结果
-  whutResultHide();
-}
-
-// 切换跑步模式
-function setRunMode(mode) {
-  whutRunMode = mode;
-  // 桌面端 + 移动端按钮样式
-  const toggle = (activeId, inactiveId) => {
-    const a = document.getElementById(activeId);
-    const b = document.getElementById(inactiveId);
-    if (a) a.className = 'btn run-mode-btn active';
-    if (b) b.className = 'btn run-mode-btn';
-  };
-  if (mode === 'free') {
-    toggle('modeFree', 'modeScored');
-    toggle('modeFreeMobile', 'modeScoredMobile');
-  } else {
-    toggle('modeScored', 'modeFree');
-    toggle('modeScoredMobile', 'modeFreeMobile');
-  }
-}
-
-// 提交跑步
-async function whutSubmit() {
-  if (!whutAuth) { alert('请先登录'); return; }
-  if (!state._whutRunData) { alert('请先点击"开始跑步"'); return; }
-
-  const { trackPts, totalTime, cpIds } = state._whutRunData;
-
-  // 显示进度条
-  whutSetStyle('whutProgress', 'display', '');
-  whutSetStyle('whutProgressMobile', 'display', '');
-  whutSetEl('whutProgressText', '提交中...');
-  whutSetEl('whutProgressTextMobile', '提交中...');
-  whutSetStyle('whutProgressFill', 'width', '0%');
-  whutSetStyle('whutProgressFillMobile', 'width', '0%');
-  whutResultHide();
-
+  // 直接提交
+  whutShowWaiting();
   try {
     const resp = await fetch('/api/whut/submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ auth: whutAuth, trackPts, totalTime, cpIds, mode: whutRunMode }),
+      body: JSON.stringify({ auth: whutAuth, trackPts, totalTime, cpIds, mode: 'scored' }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || '提交失败');
@@ -931,8 +959,8 @@ async function whutSubmit() {
     whutJobId = data.jobId;
     whutStartPolling();
   } catch (e) {
-    whutSetEl('whutProgressText', '错误: ' + e.message);
-    whutSetEl('whutProgressTextMobile', '错误: ' + e.message);
+    whutHideWaiting();
+    alert('提交失败: ' + e.message);
   }
 }
 
@@ -947,63 +975,92 @@ function whutPollStatus() {
   fetch('/api/whut/job/' + whutJobId)
     .then(r => r.json())
     .then(data => {
-      whutSetStyle('whutProgressFill', 'width', data.progress + '%');
-      whutSetStyle('whutProgressFillMobile', 'width', data.progress + '%');
-      whutSetEl('whutProgressText', data.message || '运行中');
-      whutSetEl('whutProgressTextMobile', data.message || '运行中');
+      // 更新覆盖层
+      whutUpdateWaiting(data);
 
       if (data.status === 'done') {
         clearInterval(whutPollTimer);
         whutPollTimer = null;
-        whutSetStyle('whutProgressFill', 'width', '100%');
-        whutSetStyle('whutProgressFillMobile', 'width', '100%');
-        setTimeout(() => whutShowResult(data.result), 500);
+        whutHideWaiting();
+        setTimeout(() => whutShowResult(data.result), 300);
       } else if (data.status === 'error') {
         clearInterval(whutPollTimer);
         whutPollTimer = null;
-        whutSetEl('whutProgressText', '失败: ' + (data.error || '未知错误'));
-        whutSetEl('whutProgressTextMobile', '失败: ' + (data.error || '未知错误'));
+        whutHideWaiting();
+        alert('跑步失败: ' + (data.error || '未知错误'));
       }
     })
-    .catch(e => {
-      whutSetEl('whutProgressText', '轮询失败: ' + e.message);
-      whutSetEl('whutProgressTextMobile', '轮询失败: ' + e.message);
-    });
+    .catch(e => { /* 轮询失败忽略，下次重试 */ });
 }
 
-// 显示结果卡片
+// ══ 等待覆盖层 ══
+function whutShowWaiting() {
+  const overlay = document.getElementById('waitingOverlay');
+  if (overlay) overlay.style.display = 'flex';
+  whutSetEl('waitingStatus', '提交中');
+  whutSetEl('waitingCountdown', '--');
+  whutSetEl('waitingMsg', '初始化');
+  whutSetStyle('waitingProgressFill', 'width', '0%');
+  // 隐藏倒计时
+  const cd = document.getElementById('waitingCountdown');
+  if (cd) cd.style.display = 'none';
+  const lbl = document.getElementById('waitingLabel');
+  if (lbl) lbl.style.display = 'none';
+}
+
+function whutHideWaiting() {
+  const overlay = document.getElementById('waitingOverlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function whutUpdateWaiting(data) {
+  const msg = data.message || '';
+  const match = msg.match(/等待 (\d+)s/);
+  if (match) {
+    const s = parseInt(match[1]);
+    whutSetEl('waitingCountdown', s + 's');
+  }
+  whutSetEl('waitingMsg', msg || '运行中');
+  whutSetStyle('waitingProgressFill', 'width', data.progress + '%');
+  if (data.status === 'done' || data.status === 'error') {
+    whutHideWaiting();
+  }
+}
+
+function whutSkipWait() {} // no-op, 新版流程无需等待
+
+// 显示结果页覆盖层
 function whutShowResult(result) {
   if (!result) return;
-  // 隐藏进度条
-  whutSetStyle('whutProgress', 'display', 'none');
-  whutSetStyle('whutProgressMobile', 'display', 'none');
 
   const statusOk = result.status === '1' || result.status === 1 || (result.reason && result.reason.includes('成功'));
-  const statusText = statusOk ? '完成' : '失败';
-  const statusClass = statusOk ? 'run-status-ok' : 'run-status-fail';
-  const reasonClass = statusOk ? 'success' : 'fail';
+  const statusText = statusOk ? '✅ 完成' : '❌ 失败';
   const reasonText = result.reason || (statusOk ? '跑步记录已保存' : '未知错误');
 
-  const cardHtml = `
-    <div class="run-row"><span class="run-label">记录ID</span><span class="run-value">${result.record_id || '-'}</span></div>
-    <div class="run-row"><span class="run-label">距离</span><span class="run-value">${result.distance ? result.distance.toFixed(3) : '-'} km</span></div>
-    <div class="run-row"><span class="run-label">配速</span><span class="run-value">${result.pace || '-'}</span></div>
-    <div class="run-row"><span class="run-label">用时</span><span class="run-value">${result.time || '-'}s</span></div>
-    <div class="run-row"><span class="run-label">状态</span><span class="run-value ${statusClass}">${statusText}</span></div>
-    <div class="run-reason ${reasonClass}">${reasonText}</div>
-  `;
+  whutSetEl('resultIcon', statusOk ? '✅' : '❌');
+  whutSetEl('resultTitle', statusOk ? '跑步完成' : '跑步失败');
+  whutSetEl('resultRecordId', result.record_id || '-');
+  whutSetEl('resultDistance', result.distance ? result.distance.toFixed(3) + ' km' : '-');
+  whutSetEl('resultPace', result.pace || '-');
+  whutSetEl('resultTime', result.time ? result.time + ' s' : '-');
+  whutSetEl('resultMsg', reasonText);
 
-  const card = document.getElementById('whutResult');
-  const cardMobile = document.getElementById('whutResultMobile');
-  if (card) { card.innerHTML = cardHtml; card.style.display = ''; }
-  if (cardMobile) { cardMobile.innerHTML = cardHtml; cardMobile.style.display = ''; }
+  // 保持结果页卡片样式状态
+  const title = document.getElementById('resultTitle');
+  if (title) title.style.color = statusOk ? '' : 'var(--accent2)';
+
+  // 显示结果页，隐藏等待
+  whutHideWaiting();
+  const overlay = document.getElementById('resultOverlay');
+  if (overlay) overlay.style.display = 'flex';
 }
 
-function whutResultHide() {
-  ['whutResult', 'whutResultMobile'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) { el.style.display = 'none'; el.innerHTML = ''; }
-  });
+// 关闭结果页，返回继续跑步
+function whutDismissResult() {
+  const overlay = document.getElementById('resultOverlay');
+  if (overlay) overlay.style.display = 'none';
+  // 清除跑步数据以便重新开始
+  state._whutRunData = null;
 }
 
 // 双端 UI 辅助

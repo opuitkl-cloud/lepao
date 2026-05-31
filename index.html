@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>轨迹绘制 · GPS Mapper</title>
-<link rel="stylesheet" href="css/style.css?v=6">
+<title>WHUT绘跑</title>
+<link rel="stylesheet" href="css/style.css?v=9">
 </head>
 <body>
 
@@ -12,12 +12,11 @@
 <header id="appHeader">
   <!-- 登录状态（默认显示） -->
   <div id="headerLogin">
-    <div class="logo"><span style="font-size:18px;">🏃</span> 校园跑步助手</div>
-    <div class="spd-hint">打开 智慧体育 → 我的 → 右上角  → 复制链接 → 粘贴下方登录</div>
+    <div class="logo"><img src="data/logo.png?v=2" class="logo-img" alt=""> WHUT绘跑</div>
   </div>
   <!-- 已登录状态 -->
   <div id="headerMain" style="display:none;">
-    <div class="logo">GPS<span>/</span>TRACER</div>
+    <div class="logo"><img src="data/logo.png?v=2" class="logo-img logo-img-sm" alt=""> GPS<span>/</span>TRACER</div>
     <div class="header-stats">
       <div class="stat"><div class="stat-label">总距离</div><div class="stat-value" id="totalDistStat">0 m</div></div>
       <div class="stat"><div class="stat-label">记录点</div><div class="stat-value" id="recordedPtsStat">0</div></div>
@@ -29,16 +28,19 @@
 <!-- ══ 登录页（未登录时显示，居中） ══ -->
 <div class="login-view" id="loginView">
   <div class="login-card">
-    <div class="login-icon">🏃</div>
-    <div class="login-title">校园跑步助手</div>
-    <div class="login-sub">WHUT 校园跑步 · 轨迹绘制 · 自动提交</div>
+    <div class="login-title">WHUT绘跑</div>
+    <div class="login-sub">轨迹绘制 · 直接提交</div>
 
-    <div class="whut-status" id="loginStatus"><span class="status-dot"></span> 未登录</div>
+    <div class="login-divider"></div>
 
-    <label>智慧体育链接</label>
-    <input type="text" id="spdUrl" placeholder="粘贴智慧体育复制的链接..." autocomplete="off" style="margin-bottom:8px;">
-    <button class="btn btn-primary" onclick="whutLogin()" style="margin-top:0;">登录</button>
+    <div class="login-input-group">
+      <div class="whut-status" id="loginStatus"><span class="status-dot"></span> 未登录</div>
+      <label>智慧体育链接</label>
+      <input type="text" id="spdUrl" placeholder="粘贴智慧体育复制的链接..." autocomplete="off">
+      <button class="btn btn-primary login-btn" onclick="whutLogin()">登录</button>
+    </div>
 
+    <div class="login-footer">打开 智慧体育 → 我的 → 右上角  → 复制链接</div>
   </div>
 </div>
 
@@ -107,33 +109,15 @@
   <div class="section" id="sec-motion">
     <div class="sec-title">运动参数</div>
     <label>运动总时间（秒）</label>
-    <input type="number" id="totalTime" value="3600" min="1">
+    <input type="number" id="totalTime" value="666" min="1">
     <label>采样间隔（每N个原始点）</label>
-    <input type="number" id="sampleInterval" value="20" min="1" max="100">
+    <input type="number" id="sampleInterval" value="6" min="1" max="100">
     <div class="points-info" style="margin-top:6px;">
       原始点：<span id="rawPtCount">0</span> &nbsp; 记录点：<span id="recPtCount">0</span>
     </div>
     <div style="font-size:10px;color:var(--text-dim);margin-top:4px;">一次跑步大概 70~80 个点</div>
-    <button class="btn btn-primary" onclick="whutStartRun()" style="margin-top:8px;" id="startRunBtn">⚡ 开始跑步</button>
-  </div>
-
-  <!-- 4. WHUT 提交 -->
-  <div class="section" id="sec-whut-submit" style="display:none;">
-    <div class="sec-title">提交跑步</div>
-    <div id="whutCpInfo" style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">打卡点：未匹配</div>
-    <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">距离：<span id="whutDistance">0 km</span></div>
-    <div class="btn-row" style="margin-bottom:8px;">
-      <button class="btn run-mode-btn active" id="modeFree" onclick="setRunMode('free')">自由跑</button>
-      <button class="btn run-mode-btn" id="modeScored" onclick="setRunMode('scored')">计分跑</button>
-    </div>
-    <button class="btn btn-primary" id="whutSubmitBtn" onclick="whutSubmit()">🚀 提交跑步</button>
-    <!-- 进度条 -->
-    <div class="whut-progress" id="whutProgress" style="display:none;">
-      <div class="whut-progress-bar"><div class="whut-progress-fill" id="whutProgressFill"></div></div>
-      <div class="whut-progress-text" id="whutProgressText">初始化</div>
-    </div>
-    <!-- 结果卡片 -->
-    <div class="run-card" id="whutResult" style="display:none;"></div>
+    <div class="whut-cp-status" id="whutCpStatus"></div>
+    <button class="btn btn-primary" onclick="whutStartRun()" style="margin-top:4px;" id="startRunBtn">⚡ 确认</button>
   </div>
 
   <!-- 5. JSON 输出（隐藏） -->
@@ -162,33 +146,15 @@
   <div class="section" id="sec-motion-mobile">
     <div class="sec-title">运动参数</div>
     <label>运动总时间（秒）</label>
-    <input type="number" id="totalTimeMobile" value="3600" min="1">
+    <input type="number" id="totalTimeMobile" value="666" min="1">
     <label>采样间隔（每N个原始点）</label>
-    <input type="number" id="sampleIntervalMobile" value="20" min="1" max="100">
+    <input type="number" id="sampleIntervalMobile" value="6" min="1" max="100">
     <div class="points-info" style="margin-top:6px;">
       原始点：<span id="rawPtCountMobile">0</span> &nbsp; 记录点：<span id="recPtCountMobile">0</span>
     </div>
     <div style="font-size:10px;color:var(--text-dim);margin-top:4px;">一次跑步大概 70~80 个点</div>
-    <button class="btn btn-primary" onclick="whutStartRun()" style="margin-top:8px;" id="startRunBtnMobile">⚡ 开始跑步</button>
-  </div>
-
-  <!-- WHUT 提交 (移动端绘制页) -->
-  <div class="section" id="sec-whut-submit-mobile" style="display:none;">
-    <div class="sec-title">提交跑步</div>
-    <div id="whutCpInfoMobile" style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">打卡点：未匹配</div>
-    <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">距离：<span id="whutDistanceMobile">0 km</span></div>
-    <div class="btn-row" style="margin-bottom:8px;">
-      <button class="btn run-mode-btn active" id="modeFreeMobile" onclick="setRunMode('free')">自由跑</button>
-      <button class="btn run-mode-btn" id="modeScoredMobile" onclick="setRunMode('scored')">计分跑</button>
-    </div>
-    <button class="btn btn-primary" id="whutSubmitBtnMobile" onclick="whutSubmit()">🚀 提交跑步</button>
-    <!-- 进度条 -->
-    <div class="whut-progress" id="whutProgressMobile" style="display:none;">
-      <div class="whut-progress-bar"><div class="whut-progress-fill" id="whutProgressFillMobile"></div></div>
-      <div class="whut-progress-text" id="whutProgressTextMobile">初始化</div>
-    </div>
-    <!-- 结果卡片 -->
-    <div class="run-card" id="whutResultMobile" style="display:none;"></div>
+    <div class="whut-cp-status" id="whutCpStatusMobile"></div>
+    <button class="btn btn-primary" onclick="whutStartRun()" style="margin-top:4px;" id="startRunBtnMobile">⚡ 确认</button>
   </div>
 
 </div><!-- /sidebar -->
@@ -216,22 +182,38 @@
 
 </div><!-- /main-layout -->
 
-<!-- ══ 等待倒计时覆盖层 ══ -->
+<!-- ══ 等待结果覆盖层 ══ -->
 <div id="waitingOverlay" class="waiting-overlay" style="display:none;">
   <div class="waiting-card">
-    <div class="waiting-icon" id="waitingIcon">🏃</div>
-    <div class="waiting-status" id="waitingStatus">运动中</div>
-    <div class="waiting-countdown" id="waitingCountdown">--</div>
-    <div class="waiting-label">剩余时间</div>
+    <div class="waiting-icon" id="waitingIcon"><svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 52L22 30L30 34L26 52" stroke="#4fffec" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 30L32 14L42 22L38 34" stroke="#4fffec" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="40" cy="12" r="4" fill="#4fffec"/><path d="M36 42L46 34L50 44L44 52" stroke="#4fffec" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M30 34L36 42L32 50" stroke="#4fffec" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div class="waiting-status" id="waitingStatus">提交中</div>
+    <div class="waiting-countdown" id="waitingCountdown" style="display:none;">--</div>
+    <div class="waiting-label" id="waitingLabel" style="display:none;">剩余时间</div>
     <div class="waiting-progress-wrap">
       <div class="waiting-progress-bar"><div class="waiting-progress-fill" id="waitingProgressFill"></div></div>
     </div>
     <div class="waiting-msg" id="waitingMsg">初始化</div>
-    <button class="btn btn-ghost waiting-skip-btn" id="waitingSkipBtn" onclick="whutSkipWait()">⏭ 跳过等待</button>
+  </div>
+</div>
+
+<!-- ══ 结果页覆盖层 ══ -->
+<div id="resultOverlay" class="waiting-overlay" style="display:none;">
+  <div class="waiting-card result-card">
+    <div class="result-icon" id="resultIcon">✅</div>
+    <div class="result-title" id="resultTitle">跑步完成</div>
+    <div class="result-divider"></div>
+    <div class="result-stats" id="resultStats">
+      <div class="result-stat"><span class="result-label">记录 ID</span><span class="result-value" id="resultRecordId">-</span></div>
+      <div class="result-stat"><span class="result-label">距离</span><span class="result-value" id="resultDistance">- km</span></div>
+      <div class="result-stat"><span class="result-label">配速</span><span class="result-value" id="resultPace">-</span></div>
+      <div class="result-stat"><span class="result-label">用时</span><span class="result-value" id="resultTime">- s</span></div>
+    </div>
+    <div class="result-msg" id="resultMsg"></div>
+    <button class="btn btn-primary result-btn" onclick="whutDismissResult()">返回继续跑步</button>
   </div>
 </div>
 
 <div class="copy-note" id="copyNote">已复制到剪贴板</div>
-<script src="js/app.js?v=6"></script>
+<script src="js/app.js?v=11"></script>
 </body>
 </html>

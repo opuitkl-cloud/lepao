@@ -296,6 +296,9 @@ function stopIfDrawing() {
     state.currentSegment=[];
   }
   state.lastPos=null; updateStats(); updatePointInfo(); saveToStorage();
+  // 实时生成 JSON 并更新打卡状态
+  generateJSON();
+  whutCheckCheckins();
 }
 
 function clearTrack() {
@@ -305,7 +308,7 @@ function clearTrack() {
   setDrawBtnState('▶ 开始绘制','btn btn-primary');
   setStatus('idle','待机');
   redrawAll(); updateStats(); updatePointInfo();
-  document.getElementById('jsonOutput').textContent='// 点击"生成 GPS JSON"';
+  document.getElementById('jsonOutput').textContent='// 轨迹已清除';
   state._lastJSON = null;
   state._lastTimes = null;
   whutCheckCheckins();
@@ -342,7 +345,7 @@ function onMouseMove(e) {
   if (!state.isDrawing||state.isPaused||!state.lastPos||e.buttons!==1) return;
   drawLine(state.lastPos, pos);
   state.currentSegment.push(pos); state.lastPos=pos;
-  updateStats(); updatePointInfo(); scheduleSave();
+  updateStats(); updatePointInfo(); updateTrackCheckpoints(); scheduleSave();
 }
 function onMouseUp()  { stopIfDrawing(); }
 
@@ -358,7 +361,7 @@ function onTouchMove(e) {
   const pos = getPos(e.touches[0]);
   drawLine(state.lastPos, pos);
   state.currentSegment.push(pos); state.lastPos=pos;
-  updateStats(); updatePointInfo();
+  updateStats(); updatePointInfo(); updateTrackCheckpoints();
 }
 function onTouchEnd(e) { e.preventDefault(); stopIfDrawing(); }
 
@@ -424,6 +427,10 @@ function updateCoordDisplay(pos) {
 
 // ══ STATS ══════════════════════════════════════════════════
 function getAllRawPoints() { return state.images[state.currentIdx].trackSegments.flat(); }
+function getAllPointsIncludingCurrent() {
+  const cur = state.images[state.currentIdx];
+  return [...cur.trackSegments.flat(), ...state.currentSegment];
+}
 
 function calcPixelDist(pts) {
   let d=0;
@@ -446,7 +453,7 @@ function haversine(lat1,lng1,lat2,lng2) {
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 function updateStats() {
-  const pts=getAllRawPoints(), d=pixelToMeters(calcPixelDist(pts));
+  const pts=getAllPointsIncludingCurrent(), d=pixelToMeters(calcPixelDist(pts));
   const t=+(document.getElementById('totalTime').value)||3600;
   const iv=+(document.getElementById('sampleInterval').value)||20;
   const sampled = Math.floor(pts.length/iv) + (pts.length>0 && (pts.length-1)%iv!==0 ? 1 : 0);
@@ -459,10 +466,15 @@ function updateStats() {
   document.getElementById('avgSpeedStat').textContent = d>0 ? paceM+':'+String(paceS).padStart(2,'0') : '0:00';
 }
 function updatePointInfo() {
-  const pts=getAllRawPoints(), iv=+(document.getElementById('sampleInterval').value)||20;
+  const pts=getAllPointsIncludingCurrent(), iv=+(document.getElementById('sampleInterval').value)||20;
   const sampled = Math.floor(pts.length/iv) + (pts.length>0 && (pts.length-1)%iv!==0 ? 1 : 0);
   document.getElementById('rawPtCount').textContent = pts.length;
   document.getElementById('recPtCount').textContent = pts.length<2 ? 0 : sampled;
+  // 同步移动端
+  const elRM = document.getElementById('rawPtCountMobile');
+  if (elRM) elRM.textContent = pts.length;
+  const elRecM = document.getElementById('recPtCountMobile');
+  if (elRecM) elRecM.textContent = pts.length<2 ? 0 : sampled;
 }
 
 // ══ SPEED COMPUTATION ════════════════════════════════════
@@ -482,19 +494,13 @@ function computeSpeedsAndTimes(segM, totalTime, sMin, sMax) {
 }
 
 // ══ JSON GENERATION ══════════════════════════════════════
-function generateJSON() {
-  saveCurrentCoords();
-  const cur = state.images[state.currentIdx];
-  const allPts = getAllRawPoints();
-  const interval = +(document.getElementById('sampleInterval').value)||20;
-  const totalTime = +(document.getElementById('totalTime').value)||3600;
-  // Sample
-  const sampled=[];
+// 核心计算：采样 → GPS 转换 → 时间分配 → 里程牌
+function computeTrackData(allPts, interval, totalTime) {
+  const sampled = [];
   for (let i=0;i<allPts.length;i+=interval) sampled.push(allPts[i]);
   if (allPts.length>0 && (allPts.length-1)%interval!==0) sampled.push(allPts[allPts.length-1]);
-  if (sampled.length<2) { document.getElementById('jsonOutput').textContent='// 轨迹点不足'; return; }
+  if (sampled.length<2) return null;
 
-  // Segment meters
   const segM=[];
   for (let i=0;i<sampled.length-1;i++) {
     const dx=sampled[i+1].x-sampled[i].x, dy=sampled[i+1].y-sampled[i].y;
@@ -502,16 +508,13 @@ function generateJSON() {
   }
 
   const totalM = pixelToMeters(calcPixelDist(allPts));
-  // Uniform time distribution: time = distance proportion × total time
   const totalSegM = segM.reduce((a,b)=>a+b, 0)||1;
   const times = segM.map(d => (d/totalSegM)*totalTime);
   const speeds = segM.map((d,i) => times[i]>0 ? d/times[i] : 0);
 
-  // Cumulative dist for d field
   const cumDist=[0];
   for (let i=0;i<segM.length;i++) cumDist.push(cumDist[i]+segM[i]);
 
-  // Find SECOND point crossing each km milestone
   const milestoneIdx={};
   if (totalM>=1000) {
     const maxKm=Math.floor(totalM/1000);
@@ -523,7 +526,6 @@ function generateJSON() {
     }
   }
 
-  // Build points (b carries forward from milestone)
   let currentB = undefined;
   const pts=sampled.map((p,i) => {
     const g=pixelToGPS(p.x,p.y);
@@ -537,16 +539,40 @@ function generateJSON() {
     return pt;
   });
 
-  const json = JSON.stringify(pts, null, 2);
-  document.getElementById('jsonOutput').textContent = json;
-  state._lastJSON = json;
-  state._lastTimes = times;
+  return { pts, times, json: JSON.stringify(pts, null, 2) };
+}
+
+function generateJSON() {
+  saveCurrentCoords();
+  const cur = state.images[state.currentIdx];
+  const allPts = getAllRawPoints();
+  const interval = +(document.getElementById('sampleInterval').value)||20;
+  const totalTime = +(document.getElementById('totalTime').value)||3600;
+
+  const data = computeTrackData(allPts, interval, totalTime);
+  if (!data) { document.getElementById('jsonOutput').textContent='// 轨迹点不足'; return; }
+
+  document.getElementById('jsonOutput').textContent = data.json;
+  state._lastJSON = data.json;
+  state._lastTimes = data.times;
   whutCheckCheckins();
-
-  // Checkin result
-  document.getElementById('checkinResult').innerHTML = computeCheckins(pts, times);
-
+  document.getElementById('checkinResult').innerHTML = computeCheckins(data.pts, data.times);
   redrawAll(); updateStats(); updatePointInfo();
+}
+
+// 轻量版：画的过程不松手时更新打卡状态（不含 redrawAll）
+function updateTrackCheckpoints() {
+  const cur = state.images[state.currentIdx];
+  const allPts = [...getAllRawPoints(), ...state.currentSegment];
+  if (allPts.length < 3) return;
+  const interval = +(document.getElementById('sampleInterval').value)||20;
+  const totalTime = +(document.getElementById('totalTime').value)||3600;
+  const data = computeTrackData(allPts, interval, totalTime);
+  if (!data) return;
+  state._lastJSON = data.json;
+  state._lastTimes = data.times;
+  whutCheckCheckins();
+  document.getElementById('checkinResult').innerHTML = computeCheckins(data.pts, data.times);
 }
 
 // ══ CHECKIN POINTS ════════════════════════════════════════

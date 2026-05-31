@@ -2,3 +2,4 @@ node_modules
 package-lock.json
 data/settings.json
 data/whut_history.json
+data/whut_auth.json

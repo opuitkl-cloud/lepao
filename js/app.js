@@ -14,7 +14,7 @@ function saveToStorage() {
     return {
       imgSrc: l.imgSrc || null,  // 保存完整数据（path 或 base64）
       neLat: l.neLat, neLng: l.neLng, swLat: l.swLat, swLng: l.swLng,
-      checkinPoints: l.checkinPoints || [],
+      // 不保存打卡点 — 应为客户端本地配置，不应跨服务端持久化
       gameId: l.gameId || (state.images.indexOf(l) === 0 ? 1 : 2),
     };
   });
@@ -46,7 +46,7 @@ function loadFromStorage() {
           img: null, imgSrc: imgSrc,
           neLat: l.neLat||'', neLng: l.neLng||'', swLat: l.swLat||'', swLng: l.swLng||'',
           trackSegments: [],
-          checkinPoints: l.checkinPoints || [],
+          checkinPoints: [], // 不加载服务端持久化的打卡点，保持本地独立
         _lastJSON: null, _lastTimes: null,
         gameId: l.gameId || (i === 0 ? 1 : 2),
         });

@@ -46,7 +46,7 @@ function loadFromStorage() {
           img: null, imgSrc: imgSrc,
           neLat: l.neLat||'', neLng: l.neLng||'', swLat: l.swLat||'', swLng: l.swLng||'',
           trackSegments: [],
-          checkinPoints: [], // 不加载服务端持久化的打卡点，保持本地独立
+          checkinPoints: l.checkinPoints || [],  // 仅首次加载，保存时不写回服务端
         _lastJSON: null, _lastTimes: null,
         gameId: l.gameId || (i === 0 ? 1 : 2),
         });
@@ -59,6 +59,7 @@ function loadFromStorage() {
         } else res();
       }));
       return Promise.all(promises).then(() => {
+        state.images.forEach(seedCheckinsFromWHUT);
         renderTabs();
         switchTab(Math.min(raw.currentIdx||0, state.images.length-1), true);
         return true;
@@ -133,6 +134,7 @@ window.onload = () => {
 function addImageTab() {
   const idx = state.images.length;
   state.images.push({ img:null, imgSrc:null, neLat:'',neLng:'',swLat:'',swLng:'', trackSegments:[], checkinPoints:[], _lastJSON:null, _lastTimes:null, gameId: idx === 0 ? 1 : 2 });
+  seedCheckinsFromWHUT(state.images[state.images.length-1]);
   renderTabs();
   switchTab(idx);
 }
@@ -200,6 +202,10 @@ function updateGameId(val) {
   const cur = state.images[state.currentIdx];
   if (!cur) return;
   cur.gameId = parseInt(val) || 1;
+  // 切换校区时自动更新打卡点
+  cur.checkinPoints = [];
+  seedCheckinsFromWHUT(cur);
+  renderCheckinList(); redrawAll();
   saveToStorage();
 }
 
@@ -807,6 +813,25 @@ const WHUT_CP = {
   '28': { lat: 30.520793, lng: 114.349931, name: '光纤传感技术国家实验室' },
   '29': { lat: 30.517991, lng: 114.346912, name: '田径场南' },
 };
+
+// gameId → WHUT 打卡点 ID 映射（用于本地自动补齐）
+const GAME_CP_IDS = {
+  1: [14,15,16,17,18],   // 南湖
+  2: [20,21,22,34],      // 余家头
+  3: [23,24,25],         // 鉴湖
+  4: [30,31,32,33],      // 马房山东
+  5: [26,27,28,29],      // 马房山西
+};
+
+function seedCheckinsFromWHUT(layer) {
+  if (!layer || layer.checkinPoints.length) return;
+  const ids = GAME_CP_IDS[layer.gameId];
+  if (!ids) return;
+  ids.forEach(id => {
+    const cp = WHUT_CP[id];
+    if (cp) layer.checkinPoints.push({ id, name: cp.name, lat: String(cp.lat), lng: String(cp.lng), size: 20, active: false });
+  });
+}
 
 // 页面初始化：检查已保存的认证
 function whutInit() {

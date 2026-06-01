@@ -15,6 +15,7 @@ function saveToStorage() {
       imgSrc: l.imgSrc || null,  // 保存完整数据（path 或 base64）
       neLat: l.neLat, neLng: l.neLng, swLat: l.swLat, swLng: l.swLng,
       checkinPoints: l.checkinPoints || [],
+      gameId: l.gameId || (state.images.indexOf(l) === 0 ? 1 : 2),
     };
   });
   const settings = {
@@ -46,6 +47,8 @@ function loadFromStorage() {
           neLat: l.neLat||'', neLng: l.neLng||'', swLat: l.swLat||'', swLng: l.swLng||'',
           trackSegments: [],
           checkinPoints: l.checkinPoints || [],
+        _lastJSON: null, _lastTimes: null,
+        gameId: l.gameId || (i === 0 ? 1 : 2),
         });
         if (imgSrc) {
           const img = new Image();
@@ -129,7 +132,7 @@ window.onload = () => {
 // ══ TABS ══════════════════════════════════════════════════
 function addImageTab() {
   const idx = state.images.length;
-  state.images.push({ img:null, imgSrc:null, neLat:'',neLng:'',swLat:'',swLng:'', trackSegments:[], checkinPoints:[] });
+  state.images.push({ img:null, imgSrc:null, neLat:'',neLng:'',swLat:'',swLng:'', trackSegments:[], checkinPoints:[], _lastJSON:null, _lastTimes:null, gameId: idx === 0 ? 1 : 2 });
   renderTabs();
   switchTab(idx);
 }
@@ -151,12 +154,23 @@ function switchTab(idx, skipSave) {
     saveCurrentCoords();
     saveToStorage();
   }
+  // Push any pending currentSegment to old layer before switching
+  if (state.currentSegment.length > 0) {
+    const oldCur = state.images[state.currentIdx];
+    if (oldCur) oldCur.trackSegments.push([...state.currentSegment]);
+  }
+  state.currentSegment = [];
+  state.lastPos = null;
+
   state.currentIdx = idx;
   const cur = state.images[idx];
   document.getElementById('neLat').value = cur.neLat;
   document.getElementById('neLng').value = cur.neLng;
   document.getElementById('swLat').value = cur.swLat;
   document.getElementById('swLng').value = cur.swLng;
+  // Show gameId
+  const gidEl = document.getElementById('gameIdInput');
+  if (gidEl) gidEl.value = cur.gameId || '';
   // Show path if it's a path-based image
   const pathEl = document.getElementById('imgPath');
   if (pathEl) pathEl.value = (cur.imgSrc && !cur.imgSrc.startsWith('data:')) ? cur.imgSrc : '';
@@ -166,6 +180,9 @@ function switchTab(idx, skipSave) {
   else { document.getElementById('canvasContainer').style.display='none'; document.getElementById('emptyState').style.display='flex'; }
   updateStats();
   updatePointInfo();
+  // Show this layer's JSON in preview
+  document.getElementById('jsonOutput').textContent = cur._lastJSON || '// 该图层暂无轨迹数据';
+  whutCheckCheckins();
 }
 
 function saveCurrentCoords() {
@@ -175,6 +192,15 @@ function saveCurrentCoords() {
   cur.neLng = document.getElementById('neLng').value;
   cur.swLat = document.getElementById('swLat').value;
   cur.swLng = document.getElementById('swLng').value;
+  const gidEl = document.getElementById('gameIdInput');
+  if (gidEl && gidEl.value) cur.gameId = parseInt(gidEl.value) || 1;
+}
+
+function updateGameId(val) {
+  const cur = state.images[state.currentIdx];
+  if (!cur) return;
+  cur.gameId = parseInt(val) || 1;
+  saveToStorage();
 }
 
 function bindCoordInputs() {
@@ -309,8 +335,8 @@ function clearTrack() {
   setStatus('idle','待机');
   redrawAll(); updateStats(); updatePointInfo();
   document.getElementById('jsonOutput').textContent='// 轨迹已清除';
-  state._lastJSON = null;
-  state._lastTimes = null;
+  cur._lastJSON = null;
+  cur._lastTimes = null;
   whutCheckCheckins();
   saveToStorage();
 }
@@ -553,8 +579,8 @@ function generateJSON() {
   if (!data) { document.getElementById('jsonOutput').textContent='// 轨迹点不足'; return; }
 
   document.getElementById('jsonOutput').textContent = data.json;
-  state._lastJSON = data.json;
-  state._lastTimes = data.times;
+  cur._lastJSON = data.json;
+  cur._lastTimes = data.times;
   whutCheckCheckins();
   document.getElementById('checkinResult').innerHTML = computeCheckins(data.pts, data.times);
   redrawAll(); updateStats(); updatePointInfo();
@@ -569,8 +595,8 @@ function updateTrackCheckpoints() {
   const totalTime = +(document.getElementById('totalTime').value)||3600;
   const data = computeTrackData(allPts, interval, totalTime);
   if (!data) return;
-  state._lastJSON = data.json;
-  state._lastTimes = data.times;
+  cur._lastJSON = data.json;
+  cur._lastTimes = data.times;
   whutCheckCheckins();
   document.getElementById('checkinResult').innerHTML = computeCheckins(data.pts, data.times);
 }
@@ -730,15 +756,17 @@ function setStatus(type, text) {
   if (textM) textM.textContent=text;
 }
 function copyJSON() {
-  if (!state._lastJSON) { alert('请先生成 JSON'); return; }
-  navigator.clipboard.writeText(state._lastJSON).then(()=>{
+  const cur = state.images[state.currentIdx];
+  if (!cur._lastJSON) { alert('请先生成 JSON'); return; }
+  navigator.clipboard.writeText(cur._lastJSON).then(()=>{
     const n=document.getElementById('copyNote');
     n.classList.add('show'); setTimeout(()=>n.classList.remove('show'),2000);
   });
 }
 function downloadJSON() {
-  if (!state._lastJSON) { alert('请先生成 JSON'); return; }
-  const b=new Blob([state._lastJSON],{type:'application/json'});
+  const cur = state.images[state.currentIdx];
+  if (!cur._lastJSON) { alert('请先生成 JSON'); return; }
+  const b=new Blob([cur._lastJSON],{type:'application/json'});
   const u=URL.createObjectURL(b), a=document.createElement('a');
   a.href=u; a.download=`gps_track_layer${state.currentIdx+1}_${Date.now()}.json`;
   a.click(); URL.revokeObjectURL(u);
@@ -753,11 +781,31 @@ let whutJobId = null;
 let whutPollTimer = null;
 
 const WHUT_CP = {
+  // 南湖校区 (game_id=1)
   '14': { lat: 30.509007, lng: 114.329637, name: '体育场北' },
   '15': { lat: 30.507606, lng: 114.329621, name: '体育场南' },
   '16': { lat: 30.508397, lng: 114.328302, name: '学生公寓南二栋' },
   '17': { lat: 30.506941, lng: 114.327894, name: '南六宿舍楼' },
   '18': { lat: 30.505217, lng: 114.331129, name: '体育馆东门' },
+  // 余家头校区 (game_id=2)
+  '20': { lat: 30.606097, lng: 114.355591, name: '田径场南' },
+  '21': { lat: 30.607585, lng: 114.355263, name: '田径场北' },
+  '22': { lat: 30.606844, lng: 114.357265, name: '余区一舍' },
+  '34': { lat: 30.606652, lng: 114.355189, name: '田径场西' },
+  // 鉴湖校区 (game_id=3)
+  '23': { lat: 30.514450, lng: 114.342177, name: '学海篮球场东' },
+  '24': { lat: 30.515626, lng: 114.343264, name: '学海足球场北' },
+  '25': { lat: 30.514705, lng: 114.343068, name: '学海足球场南' },
+  // 马房山校区东院 (game_id=4)
+  '30': { lat: 30.518726, lng: 114.353890, name: '东院图书馆' },
+  '31': { lat: 30.518502, lng: 114.352045, name: '东院就业大楼' },
+  '32': { lat: 30.516923, lng: 114.353911, name: '东院田径场北' },
+  '33': { lat: 30.515768, lng: 114.353976, name: '东院田径场南' },
+  // 马房山校区西院 (game_id=5)
+  '26': { lat: 30.519471, lng: 114.346949, name: '田径场北' },
+  '27': { lat: 30.520737, lng: 114.348032, name: '恬园食堂大门' },
+  '28': { lat: 30.520793, lng: 114.349931, name: '光纤传感技术国家实验室' },
+  '29': { lat: 30.517991, lng: 114.346912, name: '田径场南' },
 };
 
 // 页面初始化：检查已保存的认证
@@ -855,7 +903,7 @@ function whutShowLoginMsg(text, isOk) {
   status.className = 'whut-status' + (isOk ? ' ok' : '');
 }
 
-// 匹配 baogps 打卡点 → WHUT 打卡点 ID
+// 匹配 baogps 打卡点 → WHUT 打卡点 ID（自动匹配最近的）
 function whutMatchCheckins(checkinPoints) {
   const matched = [];
   for (const cp of (checkinPoints || [])) {
@@ -863,12 +911,12 @@ function whutMatchCheckins(checkinPoints) {
     const lat = parseFloat(cp.lat);
     const lng = parseFloat(cp.lng);
     if (isNaN(lat) || isNaN(lng)) continue;
+    let bestId = null, bestName = '', bestDist = Infinity;
     for (const [id, whut] of Object.entries(WHUT_CP)) {
-      if (haversine(lat, lng, whut.lat, whut.lng) <= 50) {
-        matched.push({ cp_id: id, name: whut.name });
-        break;
-      }
+      const d = haversine(lat, lng, whut.lat, whut.lng);
+      if (d < bestDist) { bestDist = d; bestId = id; bestName = whut.name; }
     }
+    if (bestId) matched.push({ cp_id: bestId, name: bestName, dist: Math.round(bestDist) });
   }
   return matched;
 }
@@ -882,71 +930,67 @@ function whutCheckCheckins() {
   const neLat = +cur.neLat, neLng = +cur.neLng, swLat = +cur.swLat, swLng = +cur.swLng;
   const hasCoordBounds = ![neLat, neLng, swLat, swLng].some(isNaN);
 
-  const matched = whutMatchCheckins(cur.checkinPoints);
   const allCheckins = cur.checkinPoints || [];
   const activeCount = allCheckins.filter(p => p.active && p.lat && p.lng).length;
 
-  let html = '';
-  let passed = false;
-
+  // 没有坐标或没有打卡点 → 保留原来的简单提示
   if (!hasCoordBounds && activeCount > 0) {
-    html = '<div class="cp-status-bad">⚠ 请先在「图层管理」中填写地图的右上角(NE)和左下角(SW)坐标</div>';
-  } else if (activeCount === 0) {
-    html = '<div class="cp-status-bad">⚠ 未设置打卡点，请在「图层管理」中添加</div>';
-  } else if (matched.length < 2) {
-    const matchedNames = matched.map(m => m.name).join('、');
-    html = '<div class="cp-status-bad">⚠ 打卡点配置不足 ' + matched.length + '/2';
-    if (matched.length > 0) html += '（已匹配：' + matchedNames + '）';
-    html += '<div class="cp-status-list">';
-    allCheckins.forEach(cp => {
-      if (!cp.active) return;
-      const lat = parseFloat(cp.lat);
-      const lng = parseFloat(cp.lng);
-      if (isNaN(lat) || isNaN(lng)) return;
-      const m = whutMatchCheckins([cp]);
-      if (m.length > 0) {
-        html += '<div class="hit">✓ ' + cp.name + ' → ' + m[0].name + '</div>';
-      } else {
-        html += '<div class="miss">✗ ' + cp.name + ' → 坐标不在WHUT打卡点50m内</div>';
-      }
-    });
-    html += '</div></div>';
-  } else if (!state._lastJSON) {
-    const matchedNames = matched.map(m => m.name).join('、');
-    html = '<div class="cp-status-bad">⚠ 打卡点已配置：' + matchedNames + '，请绘制轨迹并点击⚡确认生成</div>';
-  } else {
-    // 有轨迹，计算实际打卡命中
-    let trackHitHtml = '';
-    let allTrackHit = false;
-    try {
-      const pts = JSON.parse(state._lastJSON);
-      const times = state._lastTimes || pts.map(p => p.s || 1);
-      trackHitHtml = computeCheckins(pts, times);
-      allTrackHit = !trackHitHtml.includes('未打卡');
-      // 调试：显示轨迹点是否有 GPS 坐标
-      const firstPts = pts.slice(0, 3).map(p => `(${p.a},${p.o})`).join(' ');
-      if (!allTrackHit && pts.some(p => p.a == null || p.o == null)) {
-        trackHitHtml += '<div style="color:var(--text-dim);margin-top:4px;">轨迹点无GPS坐标，请检查地图NE/SW设置</div>';
-      }
-    } catch (e) {}
-
-    if (!allTrackHit) {
-      const matchedNames = matched.map(m => m.name).join('、');
-      html = '<div class="cp-status-bad">⚠ 轨迹未经过全部打卡点<div class="cp-status-list">' + trackHitHtml + '</div></div>';
-    } else {
-      const matchedNames = matched.map(m => m.name).join('、');
-      html = '<div class="cp-status-good">✅ 全部打卡完成：' + matchedNames + '<div class="cp-status-list">' + trackHitHtml + '</div></div>';
-      passed = true;
-    }
+    setCpStatus('<div class="cp-status-bad">⚠ 请先在「图层管理」中填写地图的右上角(NE)和左下角(SW)坐标</div>');
+    return false;
+  }
+  if (activeCount === 0) {
+    setCpStatus('<div class="cp-status-bad">⚠ 未设置打卡点，请在「图层管理」中添加</div>');
+    return false;
   }
 
-  // 更新桌面和移动端的状态区
+  // 解析轨迹数据（可能没有）
+  const trackPts = cur._lastJSON ? (() => { try { return JSON.parse(cur._lastJSON); } catch { return null; } })() : null;
+  const times = cur._lastTimes;
+
+  // 为每个活跃打卡点判断是否命中
+  const statusItems = [];
+  for (const cp of allCheckins) {
+    if (!cp.active) continue;
+    const lat = parseFloat(cp.lat);
+    const lng = parseFloat(cp.lng);
+    if (isNaN(lat) || isNaN(lng)) continue;
+
+    let isHit = false;
+    if (trackPts && times) {
+      for (let i = 0; i < trackPts.length; i++) {
+        if (trackPts[i].a == null || trackPts[i].o == null) continue;
+        if (haversine(trackPts[i].a, trackPts[i].o, lat, lng) <= 200) {
+          isHit = true;
+          break;
+        }
+      }
+    }
+    statusItems.push({ name: cp.name, isHit, cpId: cp.id });
+  }
+
+  let html = '';
+  if (statusItems.length < 2) {
+    html += '<div style="color:#ff6b6b;font-size:10px;margin-bottom:3px;">⚠ 至少需要设置2个打卡点</div>';
+  }
+
+  html += '<div class="cp-status-container">';
+  for (const item of statusItems) {
+    const cls = item.isHit ? 'cp-bar-hit' : 'cp-bar-miss';
+    const label = item.isHit ? '已打卡' : '未打卡';
+    html += `<div class="cp-bar ${cls}"><span style="font-size:10px;opacity:.7;min-width:30px;display:inline-block">CP${item.cpId}</span> ${item.name}<span class="cp-bar-label">${label}</span></div>`;
+  }
+  html += '</div>';
+
+  const allPassed = statusItems.length >= 2 && statusItems.every(s => s.isHit);
+  setCpStatus(html);
+  return allPassed;
+}
+
+function setCpStatus(html) {
   const el = document.getElementById('whutCpStatus');
   if (el) el.innerHTML = html;
   const elM = document.getElementById('whutCpStatusMobile');
   if (elM) elM.innerHTML = html;
-
-  return passed;
 }
 
 // 开始跑步：生成 JSON + 直接提交
@@ -960,14 +1004,15 @@ async function whutStartRun() {
   if (sMobile) document.getElementById('sampleInterval').value = sMobile.value;
 
   generateJSON();
-  if (!state._lastJSON) { alert('请先绘制轨迹'); return; }
+  const curSubmit = state.images[state.currentIdx];
+  if (!curSubmit._lastJSON) { alert('请先绘制轨迹'); return; }
 
   // 检查打卡状态（已在运动参数栏显示详细状态）
   if (!whutCheckCheckins()) { return; }
 
   const matched = whutMatchCheckins(state.images[state.currentIdx].checkinPoints);
 
-  const trackPts = JSON.parse(state._lastJSON);
+  const trackPts = JSON.parse(curSubmit._lastJSON);
   const totalTime = parseInt(document.getElementById('totalTime').value) || 666;
   const cpIds = matched.map(m => m.cp_id);
 
@@ -977,7 +1022,7 @@ async function whutStartRun() {
     const resp = await fetch('/api/whut/submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ auth: whutAuth, trackPts, totalTime, cpIds, mode: 'scored' }),
+      body: JSON.stringify({ auth: whutAuth, trackPts, totalTime, cpIds, mode: 'scored', gameId: curSubmit.gameId || 1 }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || '提交失败');
@@ -1052,8 +1097,6 @@ function whutUpdateWaiting(data) {
     whutHideWaiting();
   }
 }
-
-function whutSkipWait() {} // no-op, 新版流程无需等待
 
 // 显示结果页覆盖层
 function whutShowResult(result) {

@@ -38,11 +38,31 @@ const OSS_BUCKET    = 'lptiyu-ps5';
 const OSS_ENDPOINT  = `https://${OSS_BUCKET}.oss-cn-hangzhou.aliyuncs.com`;
 
 const WHUT_CP = {
+  // 南湖校区 (game_id=1)
   '14': { lat: 30.509007, lng: 114.329637, name: '体育场北' },
   '15': { lat: 30.507606, lng: 114.329621, name: '体育场南' },
   '16': { lat: 30.508397, lng: 114.328302, name: '学生公寓南二栋' },
   '17': { lat: 30.506941, lng: 114.327894, name: '南六宿舍楼' },
   '18': { lat: 30.505217, lng: 114.331129, name: '体育馆东门' },
+  // 余家头校区 (game_id=2)
+  '20': { lat: 30.606097, lng: 114.355591, name: '田径场南' },
+  '21': { lat: 30.607585, lng: 114.355263, name: '田径场北' },
+  '22': { lat: 30.606844, lng: 114.357265, name: '余区一舍' },
+  '34': { lat: 30.606652, lng: 114.355189, name: '田径场西' },
+  // 鉴湖校区 (game_id=3)
+  '23': { lat: 30.514450, lng: 114.342177, name: '学海篮球场东' },
+  '24': { lat: 30.515626, lng: 114.343264, name: '学海足球场北' },
+  '25': { lat: 30.514705, lng: 114.343068, name: '学海足球场南' },
+  // 马房山校区东院 (game_id=4)
+  '30': { lat: 30.518726, lng: 114.353890, name: '东院图书馆' },
+  '31': { lat: 30.518502, lng: 114.352045, name: '东院就业大楼' },
+  '32': { lat: 30.516923, lng: 114.353911, name: '东院田径场北' },
+  '33': { lat: 30.515768, lng: 114.353976, name: '东院田径场南' },
+  // 马房山校区西院 (game_id=5)
+  '26': { lat: 30.519471, lng: 114.346949, name: '田径场北' },
+  '27': { lat: 30.520737, lng: 114.348032, name: '恬园食堂大门' },
+  '28': { lat: 30.520793, lng: 114.349931, name: '光纤传感技术国家实验室' },
+  '29': { lat: 30.517991, lng: 114.346912, name: '田径场南' },
 };
 const CP_HIT_RADIUS = 200;
 
@@ -138,7 +158,7 @@ async function spdLogin(token) {
 // ══════════════════════════════════════════════════════════════
 // 提交跑步（用自定义轨迹和指定时间）
 // ══════════════════════════════════════════════════════════════
-async function submitRunSynced(auth, trackPts, totalTime, cpIds, mode, onProgress, job) {
+async function submitRunSynced(auth, trackPts, totalTime, cpIds, mode, gameId, onProgress, job) {
   onProgress && onProgress(10, '提交中');
   try {
     const cpA = WHUT_CP[cpIds[0]], cpB = WHUT_CP[cpIds[1]];
@@ -188,7 +208,7 @@ async function submitRunSynced(auth, trackPts, totalTime, cpIds, mode, onProgres
 
     // 5) stopRun
     const result = await apiCall('Run/stopRunV278', auth, {
-      role: 2, term_id: 1, game_id: '1', start_time: startTime, end_time: endTime,
+      role: 2, term_id: 1, game_id: String(gameId || 1), start_time: startTime, end_time: endTime,
       log_data: JSON.stringify(checkpoints), file_img: '', is_running_area_valid: 1,
       mobileDeviceId: 1, mobileModel: 1, mobileOsVersion: 1,
       step_info: JSON.stringify({ interval: 60, list: [] }),
@@ -366,7 +386,7 @@ const server = http.createServer(async (req, res) => {
 
   if (urlPath === '/api/whut/submit' && req.method === 'POST') {
     try {
-      const { auth, trackPts, totalTime, cpIds, mode } = await parseBody(req);
+      const { auth, trackPts, totalTime, cpIds, mode, gameId } = await parseBody(req);
       if (!auth || !auth.token) { sendJSON(res, 400, { error: '缺少认证' }); return; }
       if (!trackPts || trackPts.length < 2) { sendJSON(res, 400, { error: '轨迹点不足' }); return; }
       if (!cpIds || cpIds.length < 2) { sendJSON(res, 400, { error: '至少需要2个打卡点' }); return; }
@@ -375,7 +395,7 @@ const server = http.createServer(async (req, res) => {
       const job = { id: jobId, status: 'running', progress: 0, message: '初始化', result: null, error: null };
       jobs.set(jobId, job);
 
-      submitRunSynced(auth, trackPts, totalTime || 666, cpIds, mode || 'scored', (pct, msg) => {
+      submitRunSynced(auth, trackPts, totalTime || 666, cpIds, mode || 'scored', gameId || 1, (pct, msg) => {
         job.progress = pct;
         job.message = msg;
       }, job).then(result => {

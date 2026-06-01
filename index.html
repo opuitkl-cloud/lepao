@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>WHUT绘跑</title>
+<link rel="icon" href="data/logo.png?v=2" type="image/png">
 <link rel="stylesheet" href="css/style.css?v=9">
 </head>
 <body>
@@ -12,11 +13,11 @@
 <header id="appHeader">
   <!-- 登录状态（默认显示） -->
   <div id="headerLogin">
-    <div class="logo"><img src="data/logo.png?v=2" class="logo-img" alt=""> WHUT绘跑</div>
+        <div class="logo">WHUT绘跑</div>
   </div>
   <!-- 已登录状态 -->
   <div id="headerMain" style="display:none;">
-    <div class="logo"><img src="data/logo.png?v=2" class="logo-img logo-img-sm" alt=""> GPS<span>/</span>TRACER</div>
+        <div class="logo">WHUT绘跑</div>
     <div class="header-stats">
       <div class="stat"><div class="stat-label">总距离</div><div class="stat-value" id="totalDistStat">0 m</div></div>
       <div class="stat"><div class="stat-label">记录点</div><div class="stat-value" id="recordedPtsStat">0</div></div>
@@ -81,15 +82,19 @@
       <input type="file" accept="image/*" id="imgUpload" onchange="loadImage(event)">
       <label>图片路径（data/ 下）</label>
       <input type="text" id="imgPath" placeholder="data/map1.png" onchange="loadImageFromPath(this.value)">
-      <div style="margin-top:8px;font-family:'Quicksand',monospace;font-size:10px;color:var(--text-dim);margin-bottom:2px;">右上角坐标（NE）</div>
+      <div style="margin-top:8px;font-family:'Quicksand',monospace;font-size:10px;color:var(--text-dim);margin-bottom:2px;">左上角坐标（NW）</div>
       <div class="coord-row">
         <div><label>纬度 Lat</label><input type="number" step="0.000001" id="neLat" placeholder="40.123456"></div>
         <div><label>经度 Lng</label><input type="number" step="0.000001" id="neLng" placeholder="116.654321"></div>
       </div>
-      <div style="margin-top:6px;font-family:'Quicksand',monospace;font-size:10px;color:var(--text-dim);margin-bottom:2px;">左下角坐标（SW）</div>
+      <div style="margin-top:6px;font-family:'Quicksand',monospace;font-size:10px;color:var(--text-dim);margin-bottom:2px;">右下角坐标（SE）</div>
       <div class="coord-row">
         <div><label>纬度 Lat</label><input type="number" step="0.000001" id="swLat" placeholder="40.000000"></div>
         <div><label>经度 Lng</label><input type="number" step="0.000001" id="swLng" placeholder="116.500000"></div>
+      </div>
+      <div style="margin-top:6px;">
+        <label>校区 game_id</label>
+        <input type="number" id="gameIdInput" placeholder="1" min="1" max="5" style="width:60px;" onchange="updateGameId(this.value)">
       </div>
     </div>
   </div>

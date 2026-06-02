@@ -107,7 +107,7 @@ header {
 label { display: block; font-size: 11px; color: var(--text-dim); margin: 6px 0 3px; font-family: 'Quicksand', monospace; }
 input[type="text"], input[type="number"], input[type="file"] {
   width: 100%; background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 6px; padding: 6px 9px; color: var(--text);
+  border-radius: 6px; padding: 12px 9px; color: var(--text);
   font-family: 'Quicksand', monospace; font-size: 12px; outline: none;
   transition: border-color .2s, box-shadow .2s;
 }
@@ -195,6 +195,7 @@ input[type="file"]::file-selector-button:hover { border-color: var(--accent); co
 }
 .ci-del { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 12px; padding: 0 2px; transition: color .15s; }
 .ci-del:hover { color: var(--accent2); }
+.ci-name-text { flex: 1; font-size: 15px; opacity: 0.65; color: var(--text); font-family: 'Quicksand', 'Noto Sans SC', sans-serif; padding: 1px 4px; }
 .ci-fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
 .ci-fields input { padding: 3px 5px !important; font-size: 10px !important; margin-top: 0 !important; }
 .ci-count-row { display: flex; align-items: center; gap: 5px; }
@@ -558,11 +559,11 @@ input[type=range]::-webkit-slider-thumb:hover { box-shadow: 0 0 14px rgba(0,229,
   pointer-events: none;
 }
 .login-card {
-  width: 100%; max-width: 400px;
+  width: 100%; max-width: 420px;
   background: rgba(12, 18, 34, 0.85);
   border: 1px solid rgba(0, 229, 255, 0.15);
   border-radius: 20px;
-  padding: 40px 32px 32px;
+  padding: 40px 26px 32px;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   box-shadow: 0 24px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(0,229,255,.08), 0 0 40px rgba(0,229,255,.05);
@@ -600,8 +601,12 @@ input[type=range]::-webkit-slider-thumb:hover { box-shadow: 0 0 14px rgba(0,229,
   margin-bottom: 20px;
 }
 .login-input-group {
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex; flex-direction: column; gap: 30px;
 }
+.login-field-group {
+  display: flex; flex-direction: column; gap: 10px;
+}
+.login-input-group label { font-size: 18px; font-family: 'Quicksand', 'Noto Sans SC', sans-serif; color: var(--glow); text-shadow: 0 0 8px rgba(0,229,255,.4); }
 .login-btn {
   padding: 10px 12px; font-size: 13px; letter-spacing: .1em;
   margin-top: 2px;
@@ -625,12 +630,19 @@ input[type=range]::-webkit-slider-thumb:hover { box-shadow: 0 0 14px rgba(0,229,
   background: rgba(0,229,255,.08); border-color: rgba(0,229,255,.2);
   color: var(--accent);
 }
+.whut-status.err {
+  background: rgba(251,114,153,.1); border-color: rgba(251,114,153,.25);
+  color: #fb7299;
+}
 .whut-status .status-dot {
   width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
   background: var(--text-dim);
 }
 .whut-status.ok .status-dot {
   background: var(--accent); box-shadow: 0 0 8px var(--accent);
+}
+.whut-status.err .status-dot {
+  background: #fb7299; box-shadow: 0 0 8px rgba(251,114,153,.5);
 }
 
 /* ── ORDERING ── */

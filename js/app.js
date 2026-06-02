@@ -12,17 +12,13 @@ let bgCtx, drawCtx, bgCanvas, drawCanvas;
 function saveToStorage() {
   const data = state.images.map(l => {
     return {
-      imgSrc: l.imgSrc || null,  // 保存完整数据（path 或 base64）
+      imgSrc: l.imgSrc || null,
       neLat: l.neLat, neLng: l.neLng, swLat: l.swLat, swLng: l.swLng,
       // 不保存打卡点 — 应为客户端本地配置，不应跨服务端持久化
       gameId: l.gameId || (state.images.indexOf(l) === 0 ? 1 : 2),
     };
   });
-  const settings = {
-    totalTime: document.getElementById('totalTime').value,
-    sampleInterval: document.getElementById('sampleInterval').value,
-  };
-  const payload = JSON.stringify({ layers: data, settings, currentIdx: state.currentIdx });
+  const payload = JSON.stringify({ layers: data, currentIdx: state.currentIdx });
   fetch('/api/settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -35,10 +31,6 @@ function loadFromStorage() {
     .then(r => r.json())
     .then(raw => {
       if (!raw || !raw.layers || !raw.layers.length) return false;
-      if (raw.settings) {
-        document.getElementById('totalTime').value = raw.settings.totalTime || 666;
-        document.getElementById('sampleInterval').value = raw.settings.sampleInterval || 6;
-      }
       state.images = [];
       const promises = raw.layers.map((l, i) => new Promise(res => {
         const imgSrc = l.imgSrc || l.imgPath || null;
@@ -61,7 +53,7 @@ function loadFromStorage() {
       return Promise.all(promises).then(() => {
         state.images.forEach(seedCheckinsFromWHUT);
         renderTabs();
-        switchTab(Math.min(raw.currentIdx||0, state.images.length-1), true);
+        switchTab(0, true);  // 默认南湖
         return true;
       });
     })
@@ -139,13 +131,15 @@ function addImageTab() {
   switchTab(idx);
 }
 
+const CAMPUS_NAMES = ['南湖', '鉴湖', '西院', '余区', '东院'];
+
 function renderTabs() {
   const c = document.getElementById('imgTabs');
   c.innerHTML = '';
   state.images.forEach((_, i) => {
     const t = document.createElement('div');
     t.className = 'img-tab' + (i===state.currentIdx?' active':'');
-    t.textContent = `图层 ${i+1}`;
+    t.textContent = CAMPUS_NAMES[i] || `图层 ${i+1}`;
     t.onclick = () => switchTab(i);
     c.appendChild(t);
   });
@@ -166,10 +160,14 @@ function switchTab(idx, skipSave) {
 
   state.currentIdx = idx;
   const cur = state.images[idx];
-  document.getElementById('neLat').value = cur.neLat;
-  document.getElementById('neLng').value = cur.neLng;
-  document.getElementById('swLat').value = cur.swLat;
-  document.getElementById('swLng').value = cur.swLng;
+  const neLatEl = document.getElementById('neLat');
+  if (neLatEl) neLatEl.value = cur.neLat;
+  const neLngEl = document.getElementById('neLng');
+  if (neLngEl) neLngEl.value = cur.neLng;
+  const swLatEl = document.getElementById('swLat');
+  if (swLatEl) swLatEl.value = cur.swLat;
+  const swLngEl = document.getElementById('swLng');
+  if (swLngEl) swLngEl.value = cur.swLng;
   // Show gameId
   const gidEl = document.getElementById('gameIdInput');
   if (gidEl) gidEl.value = cur.gameId || '';
@@ -190,10 +188,14 @@ function switchTab(idx, skipSave) {
 function saveCurrentCoords() {
   const cur = state.images[state.currentIdx];
   if (!cur) return;
-  cur.neLat = document.getElementById('neLat').value;
-  cur.neLng = document.getElementById('neLng').value;
-  cur.swLat = document.getElementById('swLat').value;
-  cur.swLng = document.getElementById('swLng').value;
+  const neLat = document.getElementById('neLat');
+  if (neLat) cur.neLat = neLat.value;
+  const neLng = document.getElementById('neLng');
+  if (neLng) cur.neLng = neLng.value;
+  const swLat = document.getElementById('swLat');
+  if (swLat) cur.swLat = swLat.value;
+  const swLng = document.getElementById('swLng');
+  if (swLng) cur.swLng = swLng.value;
   const gidEl = document.getElementById('gameIdInput');
   if (gidEl && gidEl.value) cur.gameId = parseInt(gidEl.value) || 1;
 }
@@ -256,7 +258,8 @@ function loadImageFromPath(path) {
   img.onload = () => {
     state.images[state.currentIdx].img = img;
     state.images[state.currentIdx].imgSrc = path;
-    document.getElementById('imgPath').value = path;
+    const pathEl = document.getElementById('imgPath');
+    if (pathEl) pathEl.value = path;
     saveCurrentCoords();
     showCanvas(img); redrawAll(); saveToStorage();
   };
@@ -489,7 +492,7 @@ function updateStats() {
   const t=+(document.getElementById('totalTime').value)||3600;
   const iv=+(document.getElementById('sampleInterval').value)||20;
   const sampled = Math.floor(pts.length/iv) + (pts.length>0 && (pts.length-1)%iv!==0 ? 1 : 0);
-  const distText = d>=1000?(d/1000).toFixed(3)+' km':d.toFixed(1)+' m';
+  const distText = Math.round(d)+' m';
   document.getElementById('totalDistStat').textContent = distText;
   document.getElementById('recordedPtsStat').textContent = pts.length<2 ? 0 : sampled;
   const paceMin = d>0 ? t/60/(d/1000) : 0;
@@ -658,17 +661,13 @@ function renderCheckinList() {
   (cur.checkinPoints||[]).forEach((pt,i) => {
     const el=document.createElement('div');
     el.className='checkin-item'+(pt.active?' active':'');
+    el.style.cursor='pointer';
+    el.onclick = () => toggleCheckin(i);
     el.innerHTML=`
       <div class="ci-header">
         <span style="font-family:'Quicksand',monospace;font-size:10px;color:var(--text-dim);min-width:24px;">CP${pt.id||''}</span>
-        <div class="ci-icon" onclick="toggleCheckin(${i})" title="点击激活/取消"></div>
-        <input class="ci-name-input" value="${pt.name}" onchange="updateCheckin(${i},'name',this.value)" placeholder="打卡点名称">
-        <button class="ci-del" onclick="deleteCheckinPoint(${i})">✕</button>
-      </div>
-      <div class="ci-fields">
-        <input type="number" step="0.000001" placeholder="纬度" value="${pt.lat}" onchange="updateCheckin(${i},'lat',this.value)">
-        <input type="number" step="0.000001" placeholder="经度" value="${pt.lng}" onchange="updateCheckin(${i},'lng',this.value)">
-        <input type="number" placeholder="直径px" value="${pt.size}" min="4" onchange="updateCheckin(${i},'size',this.value)">
+        <div class="ci-icon" onclick="event.stopPropagation();toggleCheckin(${i})" title="点击激活/取消"></div>
+        <span class="ci-name-text">${pt.name}</span>
       </div>
 `;
     list.appendChild(el);
@@ -925,7 +924,9 @@ function whutShowLoginMsg(text, isOk) {
   const status = document.getElementById('loginStatus');
   if (!status) return;
   status.textContent = text;
-  status.className = 'whut-status' + (isOk ? ' ok' : '');
+  status.className = 'whut-status';
+  if (isOk) status.classList.add('ok');
+  else status.classList.add('err');
 }
 
 // 匹配 baogps 打卡点 → WHUT 打卡点 ID（自动匹配最近的）
@@ -964,7 +965,7 @@ function whutCheckCheckins() {
     return false;
   }
   if (activeCount === 0) {
-    setCpStatus('<div class="cp-status-bad">⚠ 未设置打卡点，请在「图层管理」中添加</div>');
+    setCpStatus('<div class="cp-status-bad">⚠ 未设置打卡点，请点击打卡点添加</div>');
     return false;
   }
 
@@ -1021,6 +1022,22 @@ function setCpStatus(html) {
 // 开始跑步：生成 JSON + 直接提交
 async function whutStartRun() {
   if (!whutAuth) { alert('请先登录'); return; }
+
+  // 检查登录是否过期
+  try {
+    const chk = await fetch('/api/whut/check-auth', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auth: whutAuth }),
+    });
+    const chkData = await chk.json();
+    if (!chk.ok || !chkData.ok) throw new Error(chkData.error || '登录已过期');
+  } catch (e) {
+    whutAuth = null;
+    localStorage.removeItem('whutAuth');
+    alert('登录已过期，请重新登录');
+    whutUpdateUI();
+    return;
+  }
 
   // 同步移动端输入到桌面端
   const tMobile = document.getElementById('totalTimeMobile');

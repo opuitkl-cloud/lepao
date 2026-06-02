@@ -345,101 +345,7 @@ const server = http.createServer(async (req, res) => {
   const urlPath = req.url.split('?')[0];
   const time = new Date().toLocaleTimeString();
   const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || '-';
-  const ua = req.headers['user-agent'] || '';
-  // 提取 UA 括号内容并翻译为可读信息
-  const raw = ua.match(/\(([^)]+)\)/);
-  let info = '-';
-  if (raw) {
-    const models = {
-      // ── 小米 / Redmi ──
-      '25030BPNIC': '小米15S Pro', '2502AVNA0': '小米15 Ultra', '2410DPN6CC': '小米15 Pro', '24129PN74C': '小米15',
-      '24031PN0DC': '小米14 Pro', '23127PN0CC': '小米14', '2312DAB5C': '小米14 Ultra',
-      '2211133C': '小米13 Pro', '2211133G': '小米13',
-      '2201123C': '小米12 Pro', '2201122C': '小米12',
-      '2107119DC': '小米11 Pro', '2107119NC': '小米11',
-      '23117RK66C': 'Redmi K80 Pro', '24117RN76C': 'Redmi K80',
-      '23113RKC6C': 'Redmi K70 Pro', '2311DRN23C': 'Redmi K70',
-      '23078RKD5C': 'Redmi K60 Pro', '23076RN4BI': 'Redmi K60',
-      '21121210C': 'Redmi K50 Pro', '22011211C': 'Redmi K50',
-      '24090RA29C': 'Redmi Note 14 Pro+', '24094RAD4C': 'Redmi Note 14 Pro',
-      '23090RA98C': 'Redmi Note 13 Pro+', '2312DRA50H': 'Redmi Note 13 Pro',
-      '22095FRA0': 'Redmi Note 12 Turbo',
-      // ── OPPO / OnePlus / realme ──
-      'PHY110': 'OPPO Find X8 Pro', 'PKC110': 'OPPO Find X8',
-      'PHZ110': 'OPPO Find X7 Ultra', 'PHW110': 'OPPO Find X7',
-      'PGFM10': 'OPPO Find N5', 'PHN110': 'OPPO Find N3 Flip',
-      'PJC110': 'OPPO Reno13 Pro+', 'PJB110': 'OPPO Reno13',
-      'PJH110': 'OPPO Reno12 Pro', 'PJV110': 'OPPO Reno12',
-      'PJY110': 'OPPO Reno11 Pro', 'PJW110': 'OPPO Reno11',
-      'PJD110': 'OnePlus Ace 5 Pro', 'PJZ110': 'OnePlus Ace 5',
-      'PJE110': 'OnePlus 13', 'PJX110': 'OnePlus Ace 3 Pro',
-      'PHB110': 'OnePlus 12', 'PJA110': 'OnePlus Ace 3',
-      'RMX5000': 'realme GT7 Pro', 'RMX3996': 'realme GT Neo6',
-      'RMX3852': 'realme GT Neo5', 'RMX3562': 'realme GT Neo3',
-      'RMX3771': 'realme GT2 Pro', 'RMX3301': 'realme GT',
-      // ── vivo / iQOO ──
-      'V2449A': 'vivo X200 Pro', 'V2405A': 'vivo X200',
-      'V2314A': 'vivo X100 Pro', 'V2309A': 'vivo X100',
-      'V2238A': 'vivo X90 Pro+', 'V2241A': 'vivo X90 Pro',
-      'V2323A': 'vivo S20 Pro', 'V2362A': 'vivo S20',
-      'V2245A': 'vivo S18 Pro', 'V2308A': 'vivo S18',
-      'V2415A': 'iQOO 15', 'V2339A': 'iQOO 13',
-      'V2324A': 'iQOO 12 Pro', 'V2307A': 'iQOO 12',
-      'V2243A': 'iQOO 11S', 'V2218A': 'iQOO Neo9 Pro+',
-      'V2232A': 'iQOO Neo8 Pro', 'V2217A': 'iQOO Neo7',
-      // ── 华为 / 荣耀 ──
-      'ALN-AL10': '华为 Mate 70 Pro', 'ALN-AL80': '华为 Mate 60 Pro',
-      'ALN-AL00': '华为 Mate 60', 'BNE-AL00': '华为 Mate X5',
-      'BRA-AL00': '华为 Pura 70 Ultra', 'HBN-AL80': '华为 Pura 70 Pro',
-      'ADA-AL00': '华为 Pura 70', 'JLN-AL00': '华为 Nova 12 Ultra',
-      'FRL-L22': '华为 Nova 11 Pro',
-      'PTP-BD00': '荣耀 Magic7 Pro', 'PTP-AN00': '荣耀 Magic7',
-      'BVL-AN16': '荣耀 Magic6 Pro', 'BVL-AN00': '荣耀 Magic6',
-      'ELP-AN00': '荣耀 200 Pro', 'ELI-AN00': '荣耀 200',
-      'LGE-AN00': '荣耀 100 Pro', 'LRI-AN00': '荣耀 X50',
-      // ── 三星 ──
-      'SM-S938B': 'Galaxy S25 Ultra', 'SM-S9380': 'Galaxy S25 Ultra',
-      'SM-S9360': 'Galaxy S25+', 'SM-S9310': 'Galaxy S25',
-      'SM-S928B': 'Galaxy S24 Ultra', 'SM-S9280': 'Galaxy S24 Ultra',
-      'SM-S9260': 'Galaxy S24+', 'SM-S9210': 'Galaxy S24',
-      'SM-S918B': 'Galaxy S23 Ultra', 'SM-S9180': 'Galaxy S23 Ultra',
-      'SM-S9160': 'Galaxy S23+', 'SM-S9110': 'Galaxy S23',
-      'SM-S7110': 'Galaxy A55', 'SM-A5560': 'Galaxy A55',
-      'SM-F9560': 'Galaxy Z Fold6', 'SM-F9360': 'Galaxy Z Fold5',
-      // ── 其他 ──
-      'XQ-DQ72': '索尼 Xperia 1 VII', 'XQ-EC72': '索尼 Xperia 5 VII',
-      'CPH2603': 'OPPO Find N2',
-      'iPhone17,4': 'iPhone 16e', 'iPhone17,3': 'iPhone 16 Pro Max', 'iPhone17,2': 'iPhone 16 Pro', 'iPhone17,1': 'iPhone 16',
-      'iPhone16,2': 'iPhone 15 Pro Max', 'iPhone16,1': 'iPhone 15 Pro', 'iPhone15,5': 'iPhone 15 Plus', 'iPhone15,4': 'iPhone 15',
-      'iPhone15,3': 'iPhone 14 Pro Max', 'iPhone15,2': 'iPhone 14 Pro', 'iPhone14,8': 'iPhone 14 Plus', 'iPhone14,7': 'iPhone 14',
-      // ── Google Pixel ──
-      'Pixel 9 Pro Fold': 'Pixel 9 Pro Fold', 'Pixel 9 Pro XL': 'Pixel 9 Pro XL', 'Pixel 9 Pro': 'Pixel 9 Pro', 'Pixel 9': 'Pixel 9',
-      'Pixel 8 Pro': 'Pixel 8 Pro', 'Pixel 8': 'Pixel 8', 'Pixel 7 Pro': 'Pixel 7 Pro', 'Pixel 7': 'Pixel 7',
-    };
-    let s = raw[1]
-      .replace(/Linux;?\s*/i, '')
-      .replace(/CPU\s+[^;]+OS\s+\S+\s+like\s+Mac\s+OS\s+X/i, 'iOS')
-      .replace(/;\s*Win64;\s*x64;?\s*/i, '')
-      .replace(/;\s*WOW64;?\s*/i, '')
-      .replace(/U;\s*/i, '')
-      .replace(/\.\d+(?=[;)])/g, '')  // 去掉版本号后缀
-      .replace(/[; ]+/g, ' ').trim();
-    // 识别人能读懂的 Android 版本（不重复加版本号）
-    if (/Build\/BP/.test(s)) {
-      s = s.replace(/Build\/[A-Za-z0-9._-]+/g, '');
-      if (!/\bAndroid\s+\d/.test(s)) s = s.replace(/\bAndroid\b/, 'Android 16');
-    } else {
-      s = s.replace(/Build\/[A-Za-z0-9._-]+/g, '');
-    }
-    // 机型代码 → 中文名（带分隔符）
-    let hasModel = false;
-    for (const [code, name] of Object.entries(models)) {
-      if (s.includes(code)) { s = s.replace(code, '│ ' + name); hasModel = true; break; }
-    }
-    info = s.replace(/\s\s+/g, ' ').trim().substring(0, 60) || '-';
-  }
-  const browser = ua.includes('Edg') ? 'Edge' : ua.includes('OPR') ? 'Opera' : ua.includes('Firefox') ? 'Firefox' : ua.includes('Chrome') ? 'Chrome' : ua.includes('Safari') ? 'Safari' : '-';
-  console.log(`[${time}] ${ip} ${req.method} ${urlPath} [${info} ${browser}]`);
+  console.log(`[${time}] ${ip} ${req.method} ${urlPath}`);
 
   // ═══ WHUT API 路由 ═══
 
@@ -475,6 +381,18 @@ const server = http.createServer(async (req, res) => {
       sendJSON(res, 200, auth);
     } catch (e) {
       sendJSON(res, 401, { error: e.message });
+    }
+    return;
+  }
+
+  if (urlPath === '/api/whut/check-auth' && req.method === 'POST') {
+    try {
+      const { auth } = await parseBody(req);
+      if (!auth || !auth.token) { sendJSON(res, 401, { ok: false, error: '缺少认证' }); return; }
+      await beforeRun(auth);
+      sendJSON(res, 200, { ok: true });
+    } catch (e) {
+      sendJSON(res, 401, { ok: false, error: '登录已过期，请重新登录' });
     }
     return;
   }

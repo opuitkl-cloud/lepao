@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>WHUT绘跑</title>
 <link rel="icon" href="data/logo.png?v=2" type="image/png">
-<link rel="stylesheet" href="css/style.css?v=9">
+<link rel="stylesheet" href="css/style.css?v=11">
 </head>
 <body>
 
@@ -36,12 +36,14 @@
 
     <div class="login-input-group">
       <div class="whut-status" id="loginStatus"><span class="status-dot"></span> 未登录</div>
+      <div class="login-field-group">
       <label>智慧体育链接</label>
-      <input type="text" id="spdUrl" placeholder="粘贴智慧体育复制的链接..." autocomplete="off">
+      <input type="text" id="spdUrl" placeholder="粘贴智慧体育复制的链接..." autocomplete="off" style="width:100%;">
+      </div>
       <button class="btn btn-primary login-btn" onclick="whutLogin()">登录</button>
     </div>
 
-    <div class="login-footer">打开 智慧体育 → 我的 → 右上角  → 复制链接</div>
+    <div class="login-footer">打开 智慧体育 → 右上角 → 浏览器打开 → 复制链接</div>
   </div>
 </div>
 
@@ -56,43 +58,20 @@
   <div class="section" id="sec-whut-login" style="display:none;">
     <div class="sec-title">认证信息</div>
     <div class="whut-status ok" id="authStatusDisplay"><span class="status-dot"></span> <span id="authName">-</span></div>
-    <button class="btn btn-ghost" onclick="whutLogout()" style="margin-top:6px;font-size:10px;">退出登录</button>
+    <button class="btn btn-ghost" onclick="whutLogout()" style="margin-top:6px;font-size:10px;border-color:#fb7299;box-shadow:0 0 8px rgba(251,114,153,.5);color:#fb7299;text-shadow:0 0 6px rgba(251,114,153,.6);">退出登录</button>
   </div>
 
   <!-- 1. 图层管理 -->
   <div class="section" id="sec-layer">
-    <div class="sec-title collapsible" id="layerTitle" onclick="toggleSection('layerTitle','layerBody')">
-      图层管理 <span class="collapse-arrow">▾</span>
-    </div>
+    <div class="sec-title">地图选择</div>
     <div class="sec-body" id="layerBody">
       <div class="img-tabs" id="imgTabs"></div>
-      <button class="add-tab-btn" onclick="addImageTab()">＋ 添加图层</button>
-
       <div style="margin-top:10px;">
         <div style="font-family:'Quicksand',monospace;font-size:10px;color:var(--glow);margin-bottom:4px;text-transform:uppercase;letter-spacing:.1em;text-shadow:0 0 8px var(--glow);">打卡点</div>
         <div class="checkin-list" id="checkinList"></div>
-        <div class="btn-row">
-          <button class="btn btn-ghost" style="font-size:11px;" onclick="addCheckinPoint()">＋ 添加打卡点</button>
-          <button class="btn btn-ghost" style="font-size:11px;" onclick="importCheckins()">批量导入</button>
-        </div>
       </div>
 
-      <div style="margin-top:12px;font-family:'Quicksand',monospace;font-size:10px;color:var(--text-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.1em;">地图图片 & 坐标</div>
-      <label>地图图片</label>
-      <input type="file" accept="image/*" id="imgUpload" onchange="loadImage(event)">
-      <label>图片路径（data/ 下）</label>
-      <input type="text" id="imgPath" placeholder="data/map1.png" onchange="loadImageFromPath(this.value)">
-      <div style="margin-top:8px;font-family:'Quicksand',monospace;font-size:10px;color:var(--text-dim);margin-bottom:2px;">左上角坐标（NW）</div>
-      <div class="coord-row">
-        <div><label>纬度 Lat</label><input type="number" step="0.000001" id="neLat" placeholder="40.123456"></div>
-        <div><label>经度 Lng</label><input type="number" step="0.000001" id="neLng" placeholder="116.654321"></div>
-      </div>
-      <div style="margin-top:6px;font-family:'Quicksand',monospace;font-size:10px;color:var(--text-dim);margin-bottom:2px;">右下角坐标（SE）</div>
-      <div class="coord-row">
-        <div><label>纬度 Lat</label><input type="number" step="0.000001" id="swLat" placeholder="40.000000"></div>
-        <div><label>经度 Lng</label><input type="number" step="0.000001" id="swLng" placeholder="116.500000"></div>
-      </div>
-      <div style="margin-top:6px;">
+      <div style="margin-top:6px;display:none;">
         <label>校区 game_id</label>
         <input type="number" id="gameIdInput" placeholder="1" min="1" max="5" style="width:60px;" onchange="updateGameId(this.value)">
       </div>
@@ -219,6 +198,6 @@
 </div>
 
 <div class="copy-note" id="copyNote">已复制到剪贴板</div>
-<script src="js/app.js?v=11"></script>
+<script src="js/app.js?v=12"></script>
 </body>
 </html>

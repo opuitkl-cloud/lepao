@@ -449,6 +449,24 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ═══ 图片上传（base64 → 文件） ═══
+  if (urlPath === '/api/upload' && req.method === 'POST') {
+    try {
+      const { data } = await parseBody(req);
+      const match = data.match(/^data:image\/(\w+);base64,(.+)$/);
+      if (!match) { sendJSON(res, 400, { error: '无效的图片数据' }); return; }
+      const ext = match[1] === 'jpeg' ? 'jpg' : match[1];
+      const buffer = Buffer.from(match[2], 'base64');
+      const fileName = `map_${Date.now()}.${ext}`;
+      ensureDataDir();
+      fs.writeFileSync(path.join(__dirname, 'data', fileName), buffer);
+      sendJSON(res, 200, { path: `data/${fileName}` });
+    } catch (e) {
+      sendJSON(res, 500, { error: e.message });
+    }
+    return;
+  }
+
   // ═══ 静态文件（内存缓存 + gzip） ═══
   let filePath = path.join(__dirname, urlPath === '/' ? 'index.html' : urlPath);
   const ext = path.extname(filePath);

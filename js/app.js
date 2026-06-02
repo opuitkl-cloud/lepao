@@ -54,11 +54,31 @@ function loadFromStorage() {
         state.images.forEach(seedCheckinsFromWHUT);
         renderTabs();
         switchTab(0, true);  // 默认南湖
+        // 后台转换旧 base64 数据到文件引用
+        migrateBase64Images();
         return true;
       });
     })
     .catch(e => { console.warn('Load failed', e); return false; });
-}
+  }
+
+  async function migrateBase64Images() {
+    for (let i = 0; i < state.images.length; i++) {
+      const layer = state.images[i];
+      if (layer.imgSrc && layer.imgSrc.startsWith('data:')) {
+        try {
+          const resp = await fetch('/api/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: layer.imgSrc }),
+          });
+          const result = await resp.json();
+          if (resp.ok && result.path) layer.imgSrc = result.path;
+        } catch (e) { /* base64 仍可用 */ }
+      }
+    }
+    saveToStorage();
+  }
 
 // ══ MOBILE PAGE SYSTEM ════════════════════════════════
 function switchToDrawPage() {
@@ -238,12 +258,28 @@ function showSavedHint(el) {
 function loadImage(evt) {
   const file = evt.target.files[0]; if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     const dataUrl = e.target.result;
+    // 上传到服务器存为文件（代替内嵌 base64）
+    try {
+      const resp = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: dataUrl }),
+      });
+      const result = await resp.json();
+      if (resp.ok && result.path) {
+        state.images[state.currentIdx].imgSrc = result.path;
+      } else {
+        throw new Error(result.error || '上传失败');
+      }
+    } catch (err) {
+      console.warn('上传图片失败，回退 base64:', err);
+      state.images[state.currentIdx].imgSrc = dataUrl;
+    }
     const img = new Image();
     img.onload = () => {
       state.images[state.currentIdx].img    = img;
-      state.images[state.currentIdx].imgSrc = dataUrl;
       showCanvas(img); redrawAll(); saveToStorage();
     };
     img.src = dataUrl;

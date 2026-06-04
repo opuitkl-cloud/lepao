@@ -186,10 +186,10 @@ async function submitRunSynced(auth, trackPts, totalTime, cpIds, mode, gameId, o
     const absPts = pts.map(p => { const pt = { a: p.a, o: p.o, c: p.c }; if (p.s !== undefined) pt.s = p.s; if (p.b !== undefined) pt.b = p.b; return pt; });
     const recordFile = await ossUpload(encrypt(JSON.stringify(absPts)), auth);
 
-    // 3) 时间
+    // 3) 时间：endTime 为当前时间，startTime 往前推 durationS
     const realNow = Math.floor(Date.now() / 1000);
-    const startTime = realNow - 5;
-    const endTime = startTime + durationS;
+    const endTime = realNow;
+    const startTime = endTime - durationS;
 
     // 4) 打卡点
     const checkpoints = [];

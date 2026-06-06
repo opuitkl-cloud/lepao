@@ -10,6 +10,7 @@ let bgCtx, drawCtx, bgCanvas, drawCanvas;
 
 // ══ STORAGE ══════════════════════════════════════════════
 function saveToStorage() {
+  if (!saveEnabled) return; // 未登录不发送到服务端
   const data = state.images.map(l => {
     return {
       imgSrc: l.imgSrc || null,
@@ -54,31 +55,11 @@ function loadFromStorage() {
         state.images.forEach(seedCheckinsFromWHUT);
         renderTabs();
         switchTab(0, true);  // 默认南湖
-        // 后台转换旧 base64 数据到文件引用
-        migrateBase64Images();
         return true;
       });
     })
     .catch(e => { console.warn('Load failed', e); return false; });
-  }
-
-  async function migrateBase64Images() {
-    for (let i = 0; i < state.images.length; i++) {
-      const layer = state.images[i];
-      if (layer.imgSrc && layer.imgSrc.startsWith('data:')) {
-        try {
-          const resp = await fetch('/api/upload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ data: layer.imgSrc }),
-          });
-          const result = await resp.json();
-          if (resp.ok && result.path) layer.imgSrc = result.path;
-        } catch (e) { /* base64 仍可用 */ }
-      }
-    }
-    saveToStorage();
-  }
+}
 
 // ══ MOBILE PAGE SYSTEM ════════════════════════════════
 function switchToDrawPage() {
@@ -122,7 +103,15 @@ window.onload = () => {
   document.getElementById('sampleInterval').addEventListener('input', () => { redrawAll(); updateStats(); updatePointInfo(); });
   document.getElementById('totalTime').addEventListener('input', updateStats);
 
-  loadFromStorage().then(ok => { if (!ok) addImageTab(); bindCoordInputs(); });
+  // ═══ 先检查登录状态 ═══
+  whutInit(); // 设置 whutAuth、saveEnabled 和 UI
+
+  if (whutAuth) {
+    loadFromStorage().then(ok => { if (!ok) addImageTab(); bindCoordInputs(); });
+  } else {
+    // 未登录：仅初始化默认图层，不向服务端发送任何数据
+    addImageTab(); bindCoordInputs();
+  }
 
   // Init collapse (open by default)
   const body = document.getElementById('layerBody');
@@ -138,8 +127,6 @@ window.onload = () => {
   syncInput('sampleIntervalMobile', 'sampleInterval');
   syncInput('totalTime', 'totalTimeMobile');
   syncInput('sampleInterval', 'sampleIntervalMobile');
-
-  whutInit();
 };
 
 // ══ TABS ══════════════════════════════════════════════════
@@ -820,6 +807,7 @@ function downloadJSON() {
 let whutAuth = null;
 let whutJobId = null;
 let whutPollTimer = null;
+let saveEnabled = false;           // 登录后才允许保存到服务端
 
 const WHUT_CP = {
   // 南湖校区 (game_id=1)
@@ -876,6 +864,7 @@ function whutInit() {
       whutAuth = JSON.parse(saved);
       // 验证有效
       if (!whutAuth || !whutAuth.uid) whutAuth = null;
+      else saveEnabled = true; // 已有登录态，允许保存到服务端
     }
   } catch { whutAuth = null; }
   whutUpdateUI();
@@ -939,6 +928,14 @@ async function whutLogin() {
     whutAuth = data;
     localStorage.setItem('whutAuth', JSON.stringify(whutAuth));
     whutShowLoginMsg(`欢迎, ${data.name || data.student_num}`, true);
+
+    // 登录成功：重置为仅南湖校区，首次保存到服务端
+    saveEnabled = false; // 重置过程中不触发保存
+    state.images = [];
+    addImageTab(); // 添加默认南湖图层 (gameId=1)
+    saveEnabled = true;
+    saveToStorage();
+
     whutUpdateUI();
     document.getElementById('spdUrl').value = '';
   } catch (e) {
@@ -952,6 +949,7 @@ async function whutLogin() {
 // 退出登录
 function whutLogout() {
   whutAuth = null;
+  saveEnabled = false;
   localStorage.removeItem('whutAuth');
   whutUpdateUI();
 }

@@ -904,16 +904,46 @@ function whutUpdateUI() {
     if (secLogin) secLogin.style.display = 'none';
     // 重置登录表单
     document.getElementById('spdUrl').value = '';
+    document.getElementById('loginUser').value = '';
+    document.getElementById('loginPass').value = '';
   }
 }
 
-// SPD 登录
+// 账号密码登录（CAS 换 SPD token 由服务端完成）
 async function whutLogin() {
+  const username = document.getElementById('loginUser').value.trim();
+  const password = document.getElementById('loginPass').value;
+  if (!username || !password) { whutShowLoginMsg('请输入学号和密码', false); return; }
+
+  whutShowLoginMsg('登录中...', false);
+  const btn = document.getElementById('loginBtn');
+  btn.textContent = '登录中...';
+
+  try {
+    const resp = await fetch('/api/whut/login-pass', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || '登录失败');
+    await whutAfterLogin(data);
+    document.getElementById('loginUser').value = '';
+  } catch (e) {
+    whutShowLoginMsg('登录失败: ' + e.message, false);
+  } finally {
+    document.getElementById('loginPass').value = ''; // 无论成败都不把密码留在页面里
+    btn.textContent = '登录';
+  }
+}
+
+// 用智慧体育链接登录（备用方式）
+async function whutLoginByLink() {
   const spdUrl = document.getElementById('spdUrl').value.trim();
   if (!spdUrl) { whutShowLoginMsg('请粘贴智慧体育链接', false); return; }
 
   whutShowLoginMsg('登录中...', false);
-  const btn = document.querySelector('#loginView .btn-primary');
+  const btn = document.getElementById('linkLoginBtn');
   btn.textContent = '登录中...';
 
   try {
@@ -924,26 +954,42 @@ async function whutLogin() {
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || '登录失败');
-
-    whutAuth = data;
-    localStorage.setItem('whutAuth', JSON.stringify(whutAuth));
-    whutShowLoginMsg(`欢迎, ${data.name || data.student_num}`, true);
-
-    // 登录成功：重置为仅南湖校区，首次保存到服务端
-    saveEnabled = false; // 重置过程中不触发保存
-    state.images = [];
-    addImageTab(); // 添加默认南湖图层 (gameId=1)
-    saveEnabled = true;
-    saveToStorage();
-
-    whutUpdateUI();
+    await whutAfterLogin(data);
     document.getElementById('spdUrl').value = '';
   } catch (e) {
     whutShowLoginMsg('登录失败: ' + e.message, false);
     document.getElementById('spdUrl').value = '';
   } finally {
-    btn.textContent = '登录';
+    btn.textContent = '用链接登录';
   }
+}
+
+// 登录成功后的公共处理：存 auth → 加载服务端图层 → 刷新 UI
+async function whutAfterLogin(data) {
+  whutAuth = data;
+  localStorage.setItem('whutAuth', JSON.stringify(whutAuth));
+  whutShowLoginMsg(`欢迎, ${data.name || data.student_num}`, true);
+
+  // 加载服务端已保存的图层；仅当服务端没有任何图层时才建默认南湖图层
+  saveEnabled = true;
+  const loaded = await loadFromStorage();
+  if (!loaded) {
+    saveEnabled = false; // 重置过程中不触发保存
+    state.images = [];
+    addImageTab(); // 添加默认南湖图层 (gameId=1)
+    saveEnabled = true;
+    saveToStorage();
+  }
+
+  whutUpdateUI();
+}
+
+function toggleLinkLogin() {
+  const box = document.getElementById('linkLoginBox');
+  const toggle = document.getElementById('linkLoginToggle');
+  const show = box.style.display === 'none';
+  box.style.display = show ? '' : 'none';
+  toggle.textContent = show ? '或用链接登录 ▴' : '或用链接登录 ▾';
 }
 
 // 退出登录

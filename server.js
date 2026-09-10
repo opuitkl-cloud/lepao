@@ -37,6 +37,18 @@ const API_BASE      = 'https://tzcs.whut.edu.cn/v3/api.php';
 const OSS_BUCKET    = 'lptiyu-ps5';
 const OSS_ENDPOINT  = `https://${OSS_BUCKET}.oss-cn-hangzhou.aliyuncs.com`;
 
+// 统一身份认证（zhlgd CAS）
+const CAS_TP_UP       = 'https://zhlgd.whut.edu.cn/tp_up/';
+const CAS_LOGIN_URL   = 'https://zhlgd.whut.edu.cn/tpass/login?service=' + encodeURIComponent(CAS_TP_UP);
+const CAS_RSA_URL     = 'https://zhlgd.whut.edu.cn/tpass/rsa?skipWechat=true';
+const CAS_SPD_SERVICE = 'https://spd.whut.edu.cn/prod-api/login/cas';
+const CAS_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+const CAS_HEADERS = {
+  'User-Agent': CAS_UA,
+  // 服务端据此下发 Language cookie；缺了会拿到 Language=en
+  'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+};
+
 const WHUT_CP = {
   // 南湖校区 (game_id=1)
   '14': { lat: 30.509007, lng: 114.329637, name: '体育场北' },
@@ -121,6 +133,147 @@ async function ossUpload(content, auth) {
   form.append('file', new Blob([content], { type: 'text/plain' }), 'f.txt');
   await fetch(OSS_ENDPOINT, { method: 'POST', body: form });
   return key.split('Public/Upload/file/')[1];
+}
+
+// ══════════════════════════════════════════════════════════════
+// 统一身份认证（账号密码 → SPD token）
+// 流程移植自 whut_token.py：登录页拿 lt/execution → 用 RSA 公钥加密账密
+// → 提交登录（成功标志是拿到 CASTGC）→ 用 CASTGC 换 SPD 的 ST，
+// 最终跳转 URL 里带着 SPD token。
+// ══════════════════════════════════════════════════════════════
+
+// 最小 cookie jar（server.js 其余部分不需要 cookie）
+function jarHeader(jar) { return [...jar].map(([k, v]) => `${k}=${v}`).join('; '); }
+function jarStore(res, jar) {
+  for (const c of (res.headers.getSetCookie ? res.headers.getSetCookie() : [])) {
+    const pair = c.split(';')[0];
+    const i = pair.indexOf('=');
+    if (i > 0) jar.set(pair.slice(0, i).trim(), pair.slice(i + 1).trim());
+  }
+}
+
+// 取 <input name="X" value="Y"> 的 value。先匹配整个标签再取 value，
+// 这样对标签内属性的先后顺序不敏感。
+function htmlInputValue(html, name) {
+  const tag = html.match(new RegExp(`<input[^>]*name=["']${name}["'][^>]*>`, 'i'));
+  if (!tag) return null;
+  const v = tag[0].match(/value=["']([^"']*)["']/i);
+  return v ? v[1] : '';
+}
+
+// 依次尝试 query → hash fragment → 纯文本扫描
+function extractToken(s) {
+  try {
+    const u = new URL(s);
+    if (u.searchParams.get('token')) return u.searchParams.get('token');
+    if (u.hash.includes('?')) {
+      const t = new URLSearchParams(u.hash.split('?')[1]).get('token');
+      if (t) return t;
+    }
+  } catch { /* 不是 URL，按文本扫描 */ }
+  const m = s.match(/[?&#]token=([^&\s"']+)/) ||
+            s.match(/["'](?:access_)?token["']\s*[:=]\s*["']([^"']+)["']/i);
+  if (!m) return null;
+  try { return decodeURIComponent(m[1]); } catch { return m[1]; }
+}
+
+// RSA/PKCS1v1.5 加密后 base64（与页面上的 JSEncrypt 行为一致）
+function casEncrypt(publicKeyB64, plain) {
+  const c = require('crypto');
+  const key = c.createPublicKey({ key: Buffer.from(publicKeyB64, 'base64'), format: 'der', type: 'spki' });
+  return c.publicEncrypt({ key, padding: c.constants.RSA_PKCS1_PADDING }, Buffer.from(plain, 'utf8')).toString('base64');
+}
+
+// ua / visitorId 大概率只用于风控日志，按抓包结构伪造
+function buildCasUaJson() {
+  return JSON.stringify({
+    ua: CAS_UA,
+    browser: { name: 'Chrome', version: '124.0.0.0', major: '124' },
+    cpu: {}, device: {},
+    engine: { name: 'Blink', version: '124.0.0.0' },
+    os: { name: 'Windows', version: '10' },
+  });
+}
+function buildCasVisitorId() { return require('crypto').randomBytes(16).toString('hex'); }
+
+// ⚠️ 登录页模板里写死了 <span id="errormsg" style="display:none">请输入正确信息</span>，
+// 每次 GET 登录页源码里都带着这句话，出错时才由页面 JS 显示。
+// 所以这里的文字只说明"服务端把登录页退回来了"，不是可靠的错误分类依据；
+// 判断登录成功与否一律以 cookie 里有没有 CASTGC 为准。
+function casErrorMessage(html) {
+  // 容器可能是 span 也可能是 div，两种都兜住
+  const m = html.match(/id=["']errormsg["'][^>]*>([\s\S]*?)<\/div>/i) ||
+            html.match(/id=["']errormsg["'][^>]*>([\s\S]*?)<\//i);
+  const text = m ? m[1].replace(/<[^>]*>/g, '').trim() : '';
+  return text || '登录失败：账号或密码错误，或触发了额外验证';
+}
+
+async function casLogin(username, password) {
+  const jar = new Map();
+  // 手动跟随重定向：fetch 的 redirect:'follow' 拿不到中间 302 上的 Set-Cookie，
+  // 而 CASTGC 正是在登录成功的那次 302 上设置的，后面换 ST 必须带着它。
+  const req = async (url, opts = {}) => {
+    let current = url, method = opts.method || 'GET', body = opts.body, extra = opts.headers || {};
+    for (let hop = 0; ; hop++) {
+      const headers = { ...CAS_HEADERS, ...extra };
+      if (jar.size) headers['Cookie'] = jarHeader(jar);
+      const res = await fetch(current, { ...opts, method, body, headers, redirect: 'manual', signal: AbortSignal.timeout(20000) });
+      jarStore(res, jar);
+      const loc = res.headers.get('location');
+      if (res.status < 300 || res.status >= 400 || !loc || hop >= 10) {
+        // fetch 的 res.url 会丢掉 #fragment，而 token 可能就在 fragment 里，
+        // 所以记下我们实际请求的 URL
+        res.casUrl = current;
+        return res;
+      }
+      await res.text(); // 释放连接
+      current = new URL(loc, current).href;
+      // 301/302/303 把 POST 降级成 GET；307/308 保持原样
+      if (res.status === 303 || ((res.status === 301 || res.status === 302) && method !== 'GET')) {
+        method = 'GET'; body = undefined; extra = {};
+      }
+    }
+  };
+
+  // 1) 登录页：拿 lt/execution
+  const html = await (await req(CAS_LOGIN_URL)).text();
+  const lt = htmlInputValue(html, 'lt');
+  const execution = htmlInputValue(html, 'execution');
+  if (lt === null || execution === null) throw new Error('登录页结构变化，未找到 lt/execution');
+
+  // 2) RSA 公钥
+  const rsaRes = await req(CAS_RSA_URL, {
+    method: 'POST',
+    headers: {
+      'X-Requested-With': 'XMLHttpRequest',
+      'Accept': 'application/json, text/javascript, */*; q=0.01',
+      'Referer': CAS_LOGIN_URL, 'Origin': 'https://zhlgd.whut.edu.cn',
+    },
+  });
+  const publicKey = (await rsaRes.json()).publicKey;
+  if (!publicKey) throw new Error('未获取到 RSA 公钥');
+
+  // 3) 提交登录
+  const loginRes = await req(CAS_LOGIN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Origin': 'https://zhlgd.whut.edu.cn', 'Referer': CAS_LOGIN_URL,
+    },
+    body: new URLSearchParams({
+      ua: buildCasUaJson(), visitorId: buildCasVisitorId(), rsa: '',
+      ul: casEncrypt(publicKey, username), pl: casEncrypt(publicKey, password),
+      lt, execution, _eventId: 'submit',
+    }),
+  });
+  // 成功与否看有没有拿到 CASTGC，而不是看跳到了哪个地址
+  if (!jar.has('CASTGC')) throw new Error(casErrorMessage(await loginRes.text()));
+
+  // 4) 用 CASTGC 换 SPD 的 ST，最终落点 URL 里带 token
+  const spdRes = await req('https://zhlgd.whut.edu.cn/tpass/login?service=' + encodeURIComponent(CAS_SPD_SERVICE));
+  const token = extractToken(spdRes.casUrl || spdRes.url) || extractToken(await spdRes.text());
+  if (!token) throw new Error('登录成功但未取得 token');
+  return token;
 }
 
 // SPD 登录
@@ -379,6 +532,18 @@ const server = http.createServer(async (req, res) => {
       if (!token) { sendJSON(res, 400, { error: '未找到 token' }); return; }
       const auth = await spdLogin(token);
       sendJSON(res, 200, auth);
+    } catch (e) {
+      sendJSON(res, 401, { error: e.message });
+    }
+    return;
+  }
+
+  if (urlPath === '/api/whut/login-pass' && req.method === 'POST') {
+    try {
+      const { username, password } = await parseBody(req);
+      if (!username || !password) { sendJSON(res, 400, { error: '账号和密码不能为空' }); return; }
+      const token = await casLogin(username, password);
+      sendJSON(res, 200, await spdLogin(token));
     } catch (e) {
       sendJSON(res, 401, { error: e.message });
     }

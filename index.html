@@ -37,13 +37,27 @@
     <div class="login-input-group">
       <div class="whut-status" id="loginStatus"><span class="status-dot"></span> 未登录</div>
       <div class="login-field-group">
-      <label>智慧体育链接</label>
-      <input type="text" id="spdUrl" placeholder="粘贴智慧体育复制的链接..." autocomplete="off" style="width:100%;">
+        <label>学号</label>
+        <input type="text" id="loginUser" placeholder="请输入学号..." autocomplete="username" style="width:100%;">
       </div>
-      <button class="btn btn-primary login-btn" onclick="whutLogin()">登录</button>
+      <div class="login-field-group">
+        <label>密码</label>
+        <input type="password" id="loginPass" placeholder="请输入密码..." autocomplete="current-password" style="width:100%;"
+               onkeydown="if(event.key==='Enter')whutLogin()">
+      </div>
+      <button class="btn btn-primary login-btn" id="loginBtn" onclick="whutLogin()">登录</button>
+
+      <div class="login-alt-toggle" id="linkLoginToggle" onclick="toggleLinkLogin()">或用链接登录 ▾</div>
+      <div class="login-input-group" id="linkLoginBox" style="display:none;">
+        <div class="login-field-group">
+          <label>智慧体育链接</label>
+          <input type="text" id="spdUrl" placeholder="粘贴智慧体育复制的链接..." autocomplete="off" style="width:100%;">
+        </div>
+        <button class="btn btn-ghost login-btn" id="linkLoginBtn" onclick="whutLoginByLink()">用链接登录</button>
+      </div>
     </div>
 
-    <div class="login-footer">打开 智慧体育 → 右上角 → 浏览器打开 → 复制链接</div>
+    <div class="login-footer">使用统一身份认证（zhlgd）学号密码登录</div>
   </div>
 </div>
 

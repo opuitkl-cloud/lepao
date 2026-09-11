@@ -619,7 +619,7 @@ input[type=range]::-webkit-slider-thumb:hover { box-shadow: 0 0 14px rgba(0,229,
 }
 .login-alt-toggle:hover { color: var(--accent); }
 .login-footer {
-  text-align: center; font-size: 11px; color: var(--text-dim);
+  text-align: center; font-size: 16.5px; color: var(--text-dim);
   margin-top: 16px; padding-top: 16px;
   border-top: 1px solid rgba(255,255,255,.04);
   font-family: 'Quicksand', 'Noto Sans SC', sans-serif;

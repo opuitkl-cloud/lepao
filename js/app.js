@@ -1113,6 +1113,7 @@ async function whutStartRun() {
     if (!chk.ok || !chkData.ok) throw new Error(chkData.error || '登录已过期');
   } catch (e) {
     whutAuth = null;
+    saveEnabled = false;
     localStorage.removeItem('whutAuth');
     alert('登录已过期，请重新登录');
     whutUpdateUI();

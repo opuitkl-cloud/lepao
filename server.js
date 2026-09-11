@@ -8,6 +8,7 @@ const CryptoJS = require('crypto-js');
 const PORT = 6660;
 const SETTINGS_FILE = path.join(__dirname, 'data', 'settings.json');
 const HISTORY_FILE = path.join(__dirname, 'data', 'whut_history.json');
+const PRESETS_DIR = path.join(__dirname, 'data', 'presets');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -392,6 +393,12 @@ function ensureDataDir() {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
+// 预设名来自网页输入，会直接拼进文件名。只放行字母/数字/下划线/汉字/短横线，
+// 于是 `.` `/` `\` `:` 全部被剔除，写不出 data/presets/ 之外。
+function safePresetName(name) {
+  return String(name || '').replace(/[^\w一-龥-]/g, '').slice(0, 40);
+}
+
 function loadSettings() {
   const now = Date.now();
   if (settingsCache && now - settingsCacheTime < CACHE_TTL) return settingsCache;
@@ -514,6 +521,33 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end('{"ok":true}');
       });
+    }
+    return;
+  }
+
+  // ═══ 预设轨迹（供 auto.js 无人值守提交） ═══
+  if (urlPath === '/api/presets') {
+    if (req.method === 'GET') {
+      let files = [];
+      try { files = fs.readdirSync(PRESETS_DIR).filter(f => f.endsWith('.json')); } catch { /* 目录还不存在 */ }
+      sendJSON(res, 200, { presets: files.map(f => f.slice(0, -5)) });
+    } else if (req.method === 'POST') {
+      try {
+        const { name, gameId, totalTime, cpIds, trackPts } = await parseBody(req);
+        const safe = safePresetName(name);
+        if (!safe) { sendJSON(res, 400, { error: '预设名不能为空（只能用字母、数字、汉字、下划线、短横线）' }); return; }
+        if (!Array.isArray(trackPts) || trackPts.length < 2) { sendJSON(res, 400, { error: '轨迹点不足' }); return; }
+        if (!Array.isArray(cpIds) || cpIds.length < 2) { sendJSON(res, 400, { error: '至少需要2个打卡点' }); return; }
+        fs.mkdirSync(PRESETS_DIR, { recursive: true });
+        fs.writeFileSync(
+          path.join(PRESETS_DIR, safe + '.json'),
+          JSON.stringify({ name: safe, gameId: gameId || 1, totalTime: totalTime || 666, cpIds, trackPts }, null, 2),
+          'utf-8'
+        );
+        sendJSON(res, 200, { ok: true, file: 'data/presets/' + safe + '.json' });
+      } catch (e) {
+        sendJSON(res, 500, { error: e.message });
+      }
     }
     return;
   }
@@ -678,7 +712,7 @@ const CERT_DIR = path.join(__dirname, 'data');
 const certFile = path.join(CERT_DIR, 'cert.pem');
 const keyFile = path.join(CERT_DIR, 'key.pem');
 
-(function tryHTTPS() {
+function tryHTTPS() {
   if (!fs.existsSync(certFile) || !fs.existsSync(keyFile)) {
     try {
       const cp = require('child_process');
@@ -699,10 +733,16 @@ const keyFile = path.join(CERT_DIR, 'key.pem');
   } catch (e) {
     console.log('HTTPS 启动失败:', e.message);
   }
-})();
+}
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`HTTP   http://localhost:${PORT}/`);
-  const ips = getLocalIPs();
-  ips.forEach(({ name, ip }) => console.log(`       http://${ip}:${PORT}/`));
-});
+// 只有直接运行时才起服务；被 auto.js require 时只导出函数，不监听端口
+if (require.main === module) {
+  tryHTTPS();
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`HTTP   http://localhost:${PORT}/`);
+    const ips = getLocalIPs();
+    ips.forEach(({ name, ip }) => console.log(`       http://${ip}:${PORT}/`));
+  });
+}
+
+module.exports = { casLogin, spdLogin, submitRunSynced, haversine };

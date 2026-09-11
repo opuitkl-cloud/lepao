@@ -1158,6 +1158,38 @@ async function whutStartRun() {
   }
 }
 
+// 把当前轨迹导出成预设，供 auto.js 无人值守提交
+async function whutExportPreset() {
+  generateJSON();
+  const cur = state.images[state.currentIdx];
+  if (!cur._lastJSON) { alert('请先绘制轨迹'); return; }
+
+  const matched = whutMatchCheckins(cur.checkinPoints);
+  if (matched.length < 2) { alert('至少需要设置2个打卡点'); return; }
+
+  const name = prompt('预设名称（只能用字母、数字、汉字、下划线、短横线）', '预设' + (state.currentIdx + 1));
+  if (name === null) return;
+
+  try {
+    const resp = await fetch('/api/presets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        gameId: cur.gameId || 1,
+        totalTime: parseInt(document.getElementById('totalTime').value) || 666,
+        cpIds: matched.map(m => m.cp_id),
+        trackPts: JSON.parse(cur._lastJSON),
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || '导出失败');
+    alert('已保存为预设：' + data.file);
+  } catch (e) {
+    alert('导出失败: ' + e.message);
+  }
+}
+
 // 轮询
 function whutStartPolling() {
   if (whutPollTimer) clearInterval(whutPollTimer);

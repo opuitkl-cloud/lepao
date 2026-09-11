@@ -1,4 +1,5 @@
 data/whut_history.json
-
+data/presets/
 data/auto-state.json
 data/auto.log
+data/auto.json

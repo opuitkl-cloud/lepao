@@ -81,7 +81,7 @@ header {
 .section { padding: 14px 16px; border-bottom: 1px solid var(--border); position: relative; }
 .section::after { content: ''; position: absolute; bottom: 0; left: 16px; right: 16px; height: 1px; background: linear-gradient(90deg, transparent, var(--border), transparent); }
 
-/* ── COLLAPSIBLE ── */
+/* ── SECTION ── */
 .sec-title {
   font-family: 'Quicksand', monospace; font-size: 11px;
   color: var(--text); text-transform: uppercase; letter-spacing: .15em;
@@ -89,19 +89,7 @@ header {
   position: relative; font-weight: 600;
 }
 .sec-title::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--border), transparent); }
-.sec-title.collapsible { cursor: pointer; user-select: none; padding: 4px 0; margin: -4px 0; border-radius: 4px; transition: background .15s; }
-.sec-title.collapsible:hover { background: rgba(255,255,255,.03); }
-.collapse-arrow {
-  transition: transform .25s ease; font-style: normal; margin-left: auto;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; border-radius: 6px;
-  background: rgba(255,255,255,.05); border: 1px solid var(--border);
-  font-size: 12px; color: var(--text-dim);
-}
-.sec-title:hover .collapse-arrow { background: rgba(255,255,255,.08); color: var(--text); border-color: rgba(255,255,255,.12); }
-.sec-title.collapsed .collapse-arrow { transform: rotate(-90deg); }
 .sec-body { overflow: hidden; transition: max-height .25s ease; }
-.sec-body.collapsed { max-height: 0 !important; }
 
 /* ── FORMS ── */
 label { display: block; font-size: 11px; color: var(--text-dim); margin: 6px 0 3px; font-family: 'Quicksand', monospace; }

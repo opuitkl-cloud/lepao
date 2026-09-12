@@ -223,7 +223,7 @@ function bindCoordInputs() {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener('change', () => {
-      if (id === 'imgPath') return; // imgPath handled by loadImageFromPath
+      if (id === 'imgPath') return; // 该输入框已不在页面上，仅作兼容
       saveCurrentCoords();
       saveToStorage();
       showSavedHint(el);
@@ -239,55 +239,6 @@ function showSavedHint(el) {
   el.parentElement.appendChild(hint);
   requestAnimationFrame(() => { hint.style.opacity = '1'; });
   setTimeout(() => { hint.style.opacity = '0'; setTimeout(() => hint.remove(), 300); }, 800);
-}
-
-// ══ IMAGE ══════════════════════════════════════════════════
-function loadImage(evt) {
-  const file = evt.target.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async e => {
-    const dataUrl = e.target.result;
-    // 上传到服务器存为文件（代替内嵌 base64）
-    try {
-      const resp = await fetch('/api/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: dataUrl }),
-      });
-      const result = await resp.json();
-      if (resp.ok && result.path) {
-        state.images[state.currentIdx].imgSrc = result.path;
-      } else {
-        throw new Error(result.error || '上传失败');
-      }
-    } catch (err) {
-      console.warn('上传图片失败，回退 base64:', err);
-      state.images[state.currentIdx].imgSrc = dataUrl;
-    }
-    const img = new Image();
-    img.onload = () => {
-      state.images[state.currentIdx].img    = img;
-      showCanvas(img); redrawAll(); saveToStorage();
-    };
-    img.src = dataUrl;
-  };
-  reader.readAsDataURL(file);
-}
-
-function loadImageFromPath(path) {
-  if (!path) return;
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = () => {
-    state.images[state.currentIdx].img = img;
-    state.images[state.currentIdx].imgSrc = path;
-    const pathEl = document.getElementById('imgPath');
-    if (pathEl) pathEl.value = path;
-    saveCurrentCoords();
-    showCanvas(img); redrawAll(); saveToStorage();
-  };
-  img.onerror = () => { alert('无法加载图片: ' + path + '\n请确认文件存在于服务器上'); };
-  img.src = path;
 }
 
 function showCanvas(img) {
@@ -371,13 +322,6 @@ function clearTrack() {
   cur._lastTimes = null;
   whutCheckCheckins();
   saveToStorage();
-}
-
-function undoLast() {
-  const cur = state.images[state.currentIdx];
-  if (!cur.trackSegments.length) return;
-  cur.trackSegments.pop(); state.currentSegment=[]; state.lastPos=null;
-  redrawAll(); updateStats(); updatePointInfo(); saveToStorage();
 }
 
 // ══ MOUSE / TOUCH ═════════════════════════════════════════
@@ -535,22 +479,6 @@ function updatePointInfo() {
   if (elRecM) elRecM.textContent = pts.length<2 ? 0 : sampled;
 }
 
-// ══ SPEED COMPUTATION ════════════════════════════════════
-function computeSpeedsAndTimes(segM, totalTime, sMin, sMax) {
-  const n=segM.length; if (!n) return {speeds:[],times:[]};
-  const rawSpeeds = Array.from({length:n},(_,i) => {
-    const x = n>1?(i/(n-1))*6-3:0;
-    const g = Math.exp(-x*x/2);
-    return sMin + g*(sMax-sMin);
-  });
-  const rawTimes = segM.map((d,i) => rawSpeeds[i]>0?d/rawSpeeds[i]:0);
-  const sum = rawTimes.reduce((a,b)=>a+b,0);
-  const scale = sum>0?totalTime/sum:1;
-  const times = rawTimes.map(t=>t*scale);
-  const speeds = segM.map((d,i)=>times[i]>0?d/times[i]:0);
-  return {speeds,times};
-}
-
 // ══ JSON GENERATION ══════════════════════════════════════
 // 核心计算：采样 → GPS 转换 → 时间分配 → 里程牌
 function computeTrackData(allPts, interval, totalTime) {
@@ -634,49 +562,11 @@ function updateTrackCheckpoints() {
 }
 
 // ══ CHECKIN POINTS ════════════════════════════════════════
-let checkinIdCounter = 1;
-function addCheckinPoint() {
-  state.images[state.currentIdx].checkinPoints.push({id:checkinIdCounter++,name:'打卡点',lat:'',lng:'',size:20,active:false});
-  renderCheckinList(); saveToStorage();
-}
-
-function importCheckins() {
-  const text = prompt('粘贴打卡点数据（每行：ID 名称 纬度 经度 直径）');
-  if (!text) return;
-  const lines = text.trim().split('\n');
-  lines.forEach(line => {
-    // Remove common table separators and clean up
-    line = line.replace(/[│├─┤┼┐┘└┌]/g, '').replace(/,/g, ' ').trim();
-    const parts = line.split(/\s+/).filter(p => p);
-    if (parts.length >= 4) {
-      const id = parseInt(parts[0]) || checkinIdCounter++;
-      const name = parts[1];
-      const lat = parts[2];
-      const lng = parts[3];
-      const size = parts[4] ? parseInt(parts[4]) : 30;
-      state.images[state.currentIdx].checkinPoints.push({id, name, lat, lng, size, active:false});
-      if (id >= checkinIdCounter) checkinIdCounter = id + 1;
-    }
-  });
-  renderCheckinList(); saveToStorage();
-}
-function deleteCheckinPoint(i) {
-  state.images[state.currentIdx].checkinPoints.splice(i,1);
-  renderCheckinList(); redrawAll(); saveToStorage();
-}
 function toggleCheckin(i) {
   const cp=state.images[state.currentIdx].checkinPoints[i];
   cp.active=!cp.active;
   renderCheckinList(); redrawAll(); saveToStorage();
 }
-function updateCheckin(i, field, val) {
-  const cp=state.images[state.currentIdx].checkinPoints[i];
-  if (field==='size') val=parseFloat(val)||0;
-  cp[field]=val;
-  if (['size','lat','lng'].includes(field)) redrawAll();
-  saveToStorage();
-}
-
 function renderCheckinList() {
   const cur=state.images[state.currentIdx];
   const list=document.getElementById('checkinList');
@@ -757,21 +647,6 @@ function computeCheckins(pts, times) {
   return html;
 }
 
-// ══ COLLAPSIBLE ═══════════════════════════════════════════
-function toggleSection(titleId, bodyId) {
-  const title=document.getElementById(titleId);
-  const body=document.getElementById(bodyId);
-  const isCollapsed=body.classList.toggle('collapsed');
-  title.classList.toggle('collapsed', isCollapsed);
-  if (!isCollapsed) {
-    body.style.maxHeight=body.scrollHeight+'px';
-    setTimeout(()=>{ body.style.maxHeight='none'; }, 260);
-  } else {
-    body.style.maxHeight=body.scrollHeight+'px';
-    requestAnimationFrame(()=>{ body.style.maxHeight='0'; });
-  }
-}
-
 // ══ UI HELPERS ════════════════════════════════════════════
 function setStatus(type, text) {
   const badge = document.getElementById('statusBadge');
@@ -783,23 +658,6 @@ function setStatus(type, text) {
   if (badgeM) badgeM.className='status-badge status-'+type;
   if (textM) textM.textContent=text;
 }
-function copyJSON() {
-  const cur = state.images[state.currentIdx];
-  if (!cur._lastJSON) { alert('请先生成 JSON'); return; }
-  navigator.clipboard.writeText(cur._lastJSON).then(()=>{
-    const n=document.getElementById('copyNote');
-    n.classList.add('show'); setTimeout(()=>n.classList.remove('show'),2000);
-  });
-}
-function downloadJSON() {
-  const cur = state.images[state.currentIdx];
-  if (!cur._lastJSON) { alert('请先生成 JSON'); return; }
-  const b=new Blob([cur._lastJSON],{type:'application/json'});
-  const u=URL.createObjectURL(b), a=document.createElement('a');
-  a.href=u; a.download=`gps_track_layer${state.currentIdx+1}_${Date.now()}.json`;
-  a.click(); URL.revokeObjectURL(u);
-}
-
 // ════════════════════════════════════════════════════════════
 // WHUT 登录 / 提交
 // ════════════════════════════════════════════════════════════
